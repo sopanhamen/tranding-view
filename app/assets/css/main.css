@@ -1,0 +1,13 @@
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+@import './aurum.css' layer(components);
+
+/* Keep the original reset: Tailwind Preflight would alter the cloned chart/forms. */
+@theme inline {
+  --color-brand: var(--primary);
+  --color-canvas: var(--background);
+  --color-panel: var(--surface);
+  --color-copy: var(--text);
+  --color-dim: var(--muted);
+}
