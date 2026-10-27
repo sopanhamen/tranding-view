@@ -21,11 +21,13 @@ npm run generate
 
 Static output: `.output/public`. `npm run build` also supports Node hosting.
 
-## Stack and migration boundary
+## Stack and architecture
 
 Nuxt 4.6.3, Vue, TypeScript, Tailwind CSS 4, motion-v, ESLint, tailwind-merge and Nuxt `$fetch`. Versions are pinned by package-lock.json. Tailwind uses the Vite plugin; its preflight is omitted to preserve the original visual reset. Motion provides a reduced-motion-aware entrance.
 
-This is a compatibility migration: Nuxt owns the application mount, styling and fetch transport. The existing tested JavaScript controller and hash navigation remain in `public/app.js`, `public/api.js`, and `public/workspace.js` to preserve all existing workflows. Screens are not yet rewritten as native Vue components. TypeScript covers the Nuxt shell and utilities; the retained controller remains JavaScript. Do not mount the controller twice in one document.
+All seven screens are now native Vue. Each route is a file-based page under `app/pages/` (`index`, `analysis`, `plans`, `positions`, `activity`, `connection`, `api`) rendered through `app/layouts/default.vue` (sidebar + topbar). Shared UI lives in `app/components/` (chart, tables, analysis card, modal host, toast). All application state and actions — demo simulation, API sync, polling, trade/position flows, modals — live in the reactive store `app/composables/useWorkspace.ts`, which replaces the former global-state-plus-manual-render controller. Framework-agnostic logic (API client, record merging, formatting, chart SVG) sits in `app/utils/`. Navigation is Vue Router path-based (`/`, `/analysis`, …), not hash-based. The original `aurum.css` class names are reused unchanged, so the visuals are identical.
+
+The previous controller files (`public/app.js`, `public/api.js`, `public/workspace.js`) have been removed; their behavior is preserved in the store, utils and components above.
 
 All API calls use Nuxt `$fetch` through the adapter with retries disabled, including GET requests. Mutation idempotency keys and multipart screenshots are preserved. Backend credentials, Neon and MT5 configuration remain server-side. Live execution has not been tested.
 
