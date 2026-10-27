@@ -54,5 +54,5 @@ export const icons: Record<string, string> = {
 }
 
 export function iconPath(name: string): string {
-  return icons[name] ?? icons.info
+  return icons[name] ?? icons.info!
 }

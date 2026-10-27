@@ -110,7 +110,7 @@ function onReview() {
         <strong>{{ a.stop_loss ? money(a.stop_loss) : 'Not set' }}</strong>
       </div>
       <div v-for="(v, i) in a.take_profits" :key="i" class="level-row">
-        <label><span class="level-dot profit" />Take profit {{ i + 1 }}</label>
+        <label><span class="level-dot profit" />Take profit {{ Number(i) + 1 }}</label>
         <strong>{{ money(v) }}</strong>
       </div>
     </div>
