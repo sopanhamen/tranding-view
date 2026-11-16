@@ -2,9 +2,9 @@
 import { computed } from 'vue'
 import { badgeTone } from '~/utils/format'
 
-const props = defineProps<{ value: string }>()
-const tone = computed(() => badgeTone(props.value))
-const label = computed(() => props.value.replaceAll('_', ' '))
+const props = defineProps<{ value?: string | null }>()
+const tone = computed(() => badgeTone(props.value ?? ''))
+const label = computed(() => (props.value ?? '—').replaceAll('_', ' '))
 </script>
 
 <template>

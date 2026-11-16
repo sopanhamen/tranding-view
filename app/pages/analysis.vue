@@ -84,7 +84,7 @@ function setCaptureTime(i: number, value: string) {
           </div>
 
           <div class="form-section">
-            <div class="row between" style="margin-bottom: 15px"><h3 style="margin: 0">Chart screenshots</h3><span class="small muted">{{ state.uploads.length }} / 6 images</span></div>
+            <div class="row between" style="margin-bottom: 15px"><h3 style="margin: 0">Chart screenshots <span class="tag">Optional</span></h3><span class="small muted">{{ state.uploads.length }} / 6 images</span></div>
             <div
               id="upload-zone"
               class="upload-zone"
@@ -95,8 +95,8 @@ function setCaptureTime(i: number, value: string) {
             >
               <input id="chart-files" ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp" multiple class="hidden" aria-label="Choose chart screenshots" @change="onFiles" >
               <Icon name="upload" />
-              <h3>Give your analysis the full picture</h3>
-              <p>Drag charts here, or choose screenshots from your device.</p>
+              <h3>Add your own chart markup</h3>
+              <p>The analysis always uses live MT5 candles and indicators. Screenshots add your drawn context.</p>
               <button class="button" @click="fileInput?.click()"><Icon name="image" />Choose screenshots</button>
               <span class="hint">PNG, JPG or WebP · Up to 8 MB each · Max 6 files</span>
             </div>
@@ -123,20 +123,30 @@ function setCaptureTime(i: number, value: string) {
           </div>
 
           <div class="form-section">
-            <h3>Context included</h3>
-            <div class="evidence-grid">
-              <div class="evidence-item row"><Icon name="check" cls="positive" /><div>Closed candle data<small>{{ state.mode === 'demo' ? 'Synthetic demo candles' : 'From the MT5 worker' }}</small></div></div>
-              <div class="evidence-item row"><Icon name="check" cls="positive" /><div>Numerical indicators<small>RSI and ATR calculated by server</small></div></div>
+            <div class="field">
+              <label for="analysis-notes">Notes for the analyst <span class="subtle">(optional)</span></label>
+              <textarea id="analysis-notes" v-model="state.notes" rows="3" maxlength="500" placeholder="e.g. Watching the London open; prefer pullback entries." style="resize: none" aria-describedby="notes-help" />
+              <small id="notes-help">{{ state.notes.length }} / 500</small>
             </div>
-            <div class="notice amber" style="margin-top: 14px"><Icon name="info" /> <strong>Economic calendar unavailable.</strong> The server determines whether this missing context blocks execution. No news events are inferred.</div>
           </div>
 
           <div class="form-section">
-            <button class="button primary full" :disabled="state.analysing" @click="runAnalysis()">
-              <template v-if="state.analysing"><span class="spinner" /> Analysing chart…</template>
+            <h3>Context included</h3>
+            <div class="evidence-grid">
+              <div class="evidence-item row"><Icon name="check" cls="positive" /><div>Closed candle data<small>{{ state.mode === 'demo' ? 'Synthetic demo candles' : 'From the MT5 worker' }}</small></div></div>
+              <div class="evidence-item row"><Icon name="check" cls="positive" /><div>Numerical indicators<small>RSI14, ATR14, EMA20/50/200, ROC and swing structure per timeframe</small></div></div>
+              <div class="evidence-item row"><Icon name="check" cls="positive" /><div>Live quote and broker spec<small>Spread, lot rules and stop levels</small></div></div>
+              <div class="evidence-item row"><Icon :name="state.uploads.length ? 'check' : 'image'" :cls="state.uploads.length ? 'positive' : 'muted'" /><div>Your screenshots<small>{{ state.uploads.length ? state.uploads.length + ' attached' : 'None attached' }}</small></div></div>
+            </div>
+            <div class="notice amber" style="margin-top: 14px"><Icon name="info" /> <strong>Economic calendar unavailable.</strong> The server reports this as a limitation and decides whether it blocks execution. No news events are inferred.</div>
+          </div>
+
+          <div class="form-section">
+            <button class="button primary full" :disabled="state.analysing || (state.mode === 'api' && (!state.connection || state.historyOnly))" @click="runAnalysis()">
+              <template v-if="state.analysing"><span class="spinner" /> Analysing market… this can take up to a minute</template>
               <template v-else><Icon name="spark" /> Run analysis</template>
             </button>
-            <p class="hint" style="text-align: center; margin-top: 10px">{{ state.mode === 'demo' ? 'Demo analysis uses an illustrative result. No AI request or trade is sent.' : 'Screenshots are sent through your FastAPI server to its configured AI model.' }}</p>
+            <p class="hint" style="text-align: center; margin-top: 10px">{{ state.mode === 'demo' ? 'Demo analysis uses an illustrative result. No AI request or trade is sent.' : !state.connection || state.historyOnly ? 'Analysis needs a live MT5 snapshot. Start the worker to continue.' : `Runs on the server with the ${state.aiBackend} AI backend. Nothing is traded.` }}</p>
             <div v-if="analysisError" class="field-error" role="status">{{ analysisError }}</div>
           </div>
         </section>

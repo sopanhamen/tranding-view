@@ -6,8 +6,10 @@ import { TIMEFRAMES } from '~/utils/api'
 import { buildChartSvg } from '~/utils/chart'
 import { money, timefmt, esc } from '~/utils/format'
 
-const { state, chartBars, currentPrice, openModal, captureChart, toggleLevels, toast, setTimeframe } =
+const { state, chartBars, currentPrice, quote, openModal, captureChart, toggleLevels, toast, setTimeframe } =
   useWorkspace()
+
+const q = computed(() => quote())
 
 const live = computed(() => state.mode === 'api')
 const bars = computed(() => chartBars())
@@ -65,17 +67,17 @@ function onCrosshair() {
     </div>
     <div class="market-price">
       <strong>{{ money(currentPrice()) }}</strong>
-      <p :class="live ? 'muted' : 'positive'">
-        {{ live ? 'Last closed candle' : '+25.24 (+0.63%)' }}
-        <span class="subtle">{{ live ? '' : 'today · demo' }}</span>
+      <p :class="live ? (q && q.age_seconds <= 60 ? 'muted' : 'negative') : 'positive'">
+        {{ live ? (q ? `Bid · quote ${Math.round(q.age_seconds)}s old` : 'Last closed candle') : '+25.24 (+0.63%)' }}
+        <span class="subtle">{{ live ? (q && q.age_seconds > 60 ? 'market may be closed' : '') : 'today · demo' }}</span>
       </p>
     </div>
   </div>
 
   <div class="market-stats">
-    <div><span>Bid / Ask</span><strong>{{ live ? money(state.quote?.bid) + ' / ' + money(state.quote?.ask) : '4,032.18 / 4,032.38' }}</strong></div>
-    <div><span>{{ live ? 'Data source' : 'Day range' }}</span><strong>{{ live ? 'MT5 closed candles' : '3,998.40 — 4,051.20' }}</strong></div>
-    <div><span>{{ live ? 'Candles' : 'Spread' }}</span><strong>{{ live ? (state.liveCandles[state.tf]?.length ?? 0) : '20 pts' }}</strong></div>
+    <div><span>Bid / Ask</span><strong>{{ money(q?.bid) + ' / ' + money(q?.ask) }}</strong></div>
+    <div><span>Spread</span><strong>{{ Number.isFinite(q?.spread_points) ? Math.round(q.spread_points) + ' pts' : '—' }}</strong></div>
+    <div><span>{{ live ? 'Closed candles' : 'Day range' }}</span><strong>{{ live ? (state.liveCandles[state.tf]?.length ?? 0) : '3,998.40 — 4,051.20' }}</strong></div>
     <div><span>Time zone</span><strong>UTC+7</strong></div>
   </div>
 

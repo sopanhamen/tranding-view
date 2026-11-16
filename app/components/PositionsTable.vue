@@ -6,7 +6,9 @@ import { money, signed, accountMoney, timefmt } from '~/utils/format'
 const props = withDefaults(defineProps<{ rows: any[]; compact?: boolean }>(), { compact: false })
 const { state, pnl, openModal, go } = useWorkspace()
 
-const locked = (p: any) => state.mode === 'api' && p.magic !== 261026
+// Only positions opened by this app (server `managed` flag) can be changed here.
+const locked = (p: any) => !p.managed
+const pl = (p: any) => pnl(p)
 </script>
 
 <template>
@@ -38,6 +40,7 @@ const locked = (p: any) => state.mode === 'api' && p.magic !== 261026
                 <span class="gold-symbol">Au</span>
                 <strong>{{ p.symbol }}</strong>
                 <span class="side-indicator" :class="{ sell: p.side === 'SELL' }">{{ p.side }}</span>
+                <span v-if="!p.managed" class="tag" title="Opened outside this app; read-only here">External</span>
               </div>
             </td>
             <td class="mono">{{ money(p.volume) }}</td>
@@ -46,14 +49,8 @@ const locked = (p: any) => state.mode === 'api' && p.magic !== 261026
               <td class="mono">{{ money(p.sl) }}</td>
               <td class="mono">{{ money(p.tp) }}</td>
             </template>
-            <td class="mono" :class="state.mode === 'demo' ? (pnl(p) >= 0 ? 'positive' : 'negative') : ''">
-              {{
-                state.mode === 'demo'
-                  ? signed(pnl(p))
-                  : Number.isFinite(p.profit)
-                    ? accountMoney(p.profit, state.account.currency)
-                    : 'Unavailable'
-              }}
+            <td class="mono" :class="Number.isFinite(pl(p)) ? (pl(p) >= 0 ? 'positive' : 'negative') : 'muted'">
+              {{ !Number.isFinite(pl(p)) ? 'Unavailable' : state.mode === 'demo' ? signed(pl(p)) : accountMoney(pl(p), state.account.currency) }}
             </td>
             <td>
               <div class="table-actions" style="justify-content: flex-end">

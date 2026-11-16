@@ -1,12 +1,24 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useWorkspace } from '~/composables/useWorkspace'
-import { money, signed, timefmt } from '~/utils/format'
+import { money, signed, timefmt, datefmt, humanize, accountMoney, esc } from '~/utils/format'
 
-const { state, pnl, refreshData } = useWorkspace()
+const { state, pnl, refreshData, openModal, cancelPendingOrder } = useWorkspace()
+
+function askCancelPending(o: { ticket: string; order_type: string; price: number; volume: number }) {
+  openModal({
+    type: 'confirm',
+    title: 'Cancel pending order?',
+    description: `${humanize(o.order_type)} ${money(o.volume)} lots at ${money(o.price)}`,
+    bodyHtml: `<div class="notice">Order <span class="mono">${esc(o.ticket)}</span> stays live until the broker confirms removal. If it fills first, the cancel is rejected and you must close the new position instead.</div>`,
+    label: 'Queue cancellation',
+    danger: true,
+    onConfirm: () => cancelPendingOrder(o.ticket),
+  })
+}
 
 const SIZE = 8
-const pnlSum = computed(() => state.positions.reduce((v, p) => v + pnl(p), 0))
+const pnlSum = computed(() => state.positions.reduce((v, p) => v + (Number.isFinite(pnl(p)) ? pnl(p) : 0), 0))
 const totalVolume = computed(() => state.positions.reduce((v, p) => v + p.volume, 0))
 const hasUnknown = computed(() => state.commands.some((c) => c.state === 'UNKNOWN'))
 
@@ -43,9 +55,9 @@ function clearSearch() {
       <div class="summary-card"><span class="muted">Open positions</span><strong>{{ state.positions.length }}</strong><small>Account {{ state.account.login }}</small></div>
       <div class="summary-card"><span class="muted">Total volume</span><strong>{{ money(totalVolume) }}<span class="small muted"> lots</span></strong><small>Across all displayed positions</small></div>
       <div class="summary-card">
-        <span class="muted">{{ state.mode === 'demo' ? 'Unrealised P/L' : 'Data updated' }}</span>
-        <strong :class="{ positive: state.mode === 'demo' }">{{ state.mode === 'demo' ? signed(pnlSum) : timefmt(state.updatedAt) }}</strong>
-        <small>{{ state.mode === 'demo' ? 'Illustrative mark-to-market' : 'UTC+7 · Snapshot, not a live stream' }}</small>
+        <span class="muted">Floating P/L</span>
+        <strong :class="pnlSum >= 0 ? 'positive' : 'negative'">{{ state.mode === 'demo' ? signed(pnlSum) : accountMoney(pnlSum, state.account.currency) }}</strong>
+        <small>{{ state.mode === 'demo' ? 'Illustrative mark-to-market' : 'Broker profit · snapshot ' + timefmt(state.updatedAt) + ' UTC+7' }}</small>
       </div>
     </div>
 
@@ -81,6 +93,34 @@ function clearSearch() {
           </div>
         </div>
       </div>
+    </section>
+
+    <section class="panel" style="margin-top: 18px">
+      <div class="panel-head"><h2>Pending broker orders</h2><span class="tag">{{ state.pendingOrders.length }} active</span></div>
+      <div v-if="state.pendingOrders.length" class="table-wrap">
+        <table>
+          <thead><tr><th>Type</th><th>Lots</th><th>Price</th><th>SL / TP</th><th>Expires (UTC+7)</th><th style="text-align: right">Manage</th></tr></thead>
+          <tbody>
+            <tr v-for="o in state.pendingOrders" :key="o.ticket">
+              <td>
+                <div class="table-symbol">
+                  <strong>{{ humanize(o.order_type) }}</strong>
+                  <span v-if="!o.managed" class="tag" title="Placed outside this app; read-only here">External</span>
+                </div>
+                <span class="mono small subtle">{{ o.ticket }}</span>
+              </td>
+              <td class="mono">{{ money(o.volume) }}</td>
+              <td class="mono">{{ money(o.price) }}</td>
+              <td class="mono">{{ money(o.sl) }} / {{ money(o.tp) }}</td>
+              <td class="mono">{{ o.expiration ? datefmt(o.expiration) : 'GTC' }}</td>
+              <td style="text-align: right">
+                <button class="button ghost" :disabled="!o.managed" :title="o.managed ? undefined : 'Only app-placed orders can be cancelled'" @click="askCancelPending(o)">Cancel order</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <EmptyState v-else title="No pending orders" description="Limit and stop orders placed from an analysis appear here until they fill, expire or are cancelled." />
     </section>
 
     <div class="notice" style="margin-top: 18px"><Icon name="info" /> Closing a position creates a command. The position remains open until the broker confirms the close. Partial fills are shown in activity. Only positions opened by this app can be modified.</div>

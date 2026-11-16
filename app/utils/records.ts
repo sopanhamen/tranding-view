@@ -12,16 +12,27 @@ export function mergeRecords(previous: any[], incoming: any[]): any[] {
   )
 }
 
+const EVENT_ICONS: [string, string][] = [
+  ['ANALYSIS', 'spark'],
+  ['PLAN', 'plans'],
+  ['COMMAND_UNKNOWN', 'info'],
+  ['COMMAND', 'clock'],
+  ['TRADE', 'positions'],
+]
+
+// Shape an /audit event for <ActivityList>: kind → title/icon, linked IDs → description.
 export function eventView(row: any): any {
+  const kind = String(row.kind ?? '')
+  const links = [
+    row.position_ticket && `Ticket ${row.position_ticket}`,
+    row.broker_order && `Order ${row.broker_order}`,
+  ].filter(Boolean)
   return {
     ...row,
-    at: row.created_at,
-    type:
-      row.kind === 'ANALYSIS'
-        ? 'spark'
-        : row.kind === 'PLAN'
-          ? 'plans'
-          : 'activity',
+    title: kind.charAt(0) + kind.slice(1).toLowerCase().replaceAll('_', ' '),
+    description: [row.message, ...links].filter(Boolean).join(' · ') || 'Recorded by the server',
+    type: EVENT_ICONS.find(([prefix]) => kind.startsWith(prefix))?.[1] ?? 'activity',
+    state: kind === 'COMMAND_UNKNOWN' ? 'UNKNOWN' : '',
   }
 }
 

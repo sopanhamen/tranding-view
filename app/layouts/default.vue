@@ -5,7 +5,7 @@ import { useMediaQuery } from '@vueuse/core'
 import { useWorkspace, ROUTE_PATHS, type RouteName } from '~/composables/useWorkspace'
 import { timefmt, esc } from '~/utils/format'
 
-const { state, openModal, go, refreshData, startBackgroundSync, stopBackgroundSync } = useWorkspace()
+const { state, openModal, go, refreshData, startBackgroundSync, stopBackgroundSync, exposureBlocked } = useWorkspace()
 const route = useRoute()
 const isPhone = useMediaQuery('(max-width:600px)')
 
@@ -15,6 +15,7 @@ const routeTitles: Record<RouteName, string> = {
   plans: 'Trade plans',
   positions: 'Positions',
   activity: 'Activity',
+  performance: 'Performance',
   connection: 'Connection',
   api: 'API reference',
 }
@@ -45,7 +46,17 @@ const links = computed(() => [
   { route: 'plans' as RouteName, label: 'Trade plans', icon: 'plans', count: monitoringCount.value },
   { route: 'positions' as RouteName, label: 'Positions', icon: 'positions', count: state.positions.length },
   { route: 'activity' as RouteName, label: 'Activity', icon: 'activity' },
+  { route: 'performance' as RouteName, label: 'Performance', icon: 'history' },
 ])
+
+// Worker freshness for the sidebar terminal card.
+const terminal = computed(() => {
+  if (state.mode === 'demo') return { ok: true, title: 'Practice terminal', detail: 'Simulation ready' }
+  const h = state.health
+  if (!h?.fresh) return { ok: false, title: 'MT5 worker offline', detail: 'History only · trading paused' }
+  const age = Math.round(h.snapshot_age_seconds ?? 0)
+  return { ok: true, title: 'MT5 terminal', detail: `Snapshot ${age}s old` }
+})
 
 const manageLinks = [
   { route: 'connection' as RouteName, label: 'Connection', icon: 'plug' },
@@ -107,12 +118,12 @@ onUnmounted(() => {
       <div class="sidebar-bottom">
         <div class="terminal-mini">
           <div class="row between">
-            <span class="row"><span class="dot positive" />{{ state.mode === 'demo' ? 'Practice terminal' : 'MT5 terminal' }}</span>
+            <span class="row"><span class="dot" :class="terminal.ok ? 'positive' : 'negative'" />{{ terminal.title }}</span>
             <span class="badge" :class="state.account.mode === 'real' ? 'red' : 'amber'">{{ state.account.mode.toUpperCase() }}</span>
           </div>
           <div class="row between muted small">
             <span class="mono">{{ esc(state.account.login) }}</span>
-            <span>{{ state.mode === 'demo' ? 'Simulation ready' : 'Account linked' }}</span>
+            <span>{{ terminal.detail }}</span>
           </div>
         </div>
         <div class="sidebar-user">
@@ -150,8 +161,14 @@ onUnmounted(() => {
       <main id="main" class="content" tabindex="-1">
         <div v-if="state.networkError" class="status-banner red">
           <Icon name="info" />
-          <div><strong>Connection needs attention</strong><p>{{ state.networkError }}. Data may be stale. Trading actions are paused.</p></div>
-          <button class="button ghost" @click="refreshData()">Retry</button>
+          <div><strong>{{ state.authFailed ? 'API key rejected' : 'Connection needs attention' }}</strong><p>{{ state.networkError }} Trading actions are paused.</p></div>
+          <button v-if="state.authFailed" class="button ghost" @click="openModal({ type: 'settings' })">Reconnect</button>
+          <button v-else class="button ghost" @click="refreshData()">Retry</button>
+        </div>
+        <div v-else-if="state.mode === 'api' && exposureBlocked()" class="status-banner red">
+          <Icon name="lock" />
+          <div><strong>New entries are blocked</strong><p>{{ state.health?.uncertain_commands || 1 }} command(s) have an uncertain broker outcome. Reconcile before opening another trade. Closes and cancellations still work.</p></div>
+          <NuxtLink class="button ghost" to="/activity">Inspect activity</NuxtLink>
         </div>
         <slot />
       </main>

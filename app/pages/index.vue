@@ -3,13 +3,14 @@ import { computed } from 'vue'
 import { useWorkspace } from '~/composables/useWorkspace'
 import { money, signed, accountMoney } from '~/utils/format'
 
-const { state, pnl, refreshData, go } = useWorkspace()
+const { state, pnl, refreshData, go, exposureBlocked } = useWorkspace()
 
-const pnlSum = computed(() => state.positions.reduce((s, p) => s + pnl(p), 0))
+const pnlSum = computed(() => state.positions.reduce((s, p) => s + (Number.isFinite(pnl(p)) ? pnl(p) : 0), 0))
 const equity = computed(() =>
   state.mode === 'demo' ? '$' + money(state.balance + pnlSum.value) : accountMoney(state.account.equity, state.account.currency),
 )
 const monitoringCount = computed(() => state.plans.filter((p) => p.state === 'MONITORING').length)
+const quoteAge = computed(() => (state.mode === 'demo' ? 0 : (state.health?.quote?.age_seconds ?? NaN)))
 
 const viewAllPath = computed(() =>
   state.tab === 'activity' ? '/activity' : state.tab === 'plans' ? '/plans' : '/positions',
@@ -33,7 +34,7 @@ const viewAllPath = computed(() =>
             <div>
               <h3>Account equity</h3>
               <p class="mono">{{ equity }}</p>
-              <small>{{ state.mode === 'demo' ? 'Practice account' : 'Broker-reported equity' }}</small>
+              <small>{{ state.mode === 'demo' ? 'Practice account' : Number.isFinite(state.account.margin_free) ? 'Free margin ' + accountMoney(state.account.margin_free, state.account.currency) : 'Broker-reported equity' }}</small>
             </div>
           </div>
           <div class="insight">
@@ -41,7 +42,7 @@ const viewAllPath = computed(() =>
             <div>
               <h3>Open positions</h3>
               <p>{{ state.positions.length }} <span class="muted small">positions</span></p>
-              <small>{{ state.mode === 'demo' ? signed(pnlSum) + ' unrealised' : 'Latest terminal snapshot' }}</small>
+              <small :class="pnlSum >= 0 ? 'positive' : 'negative'">{{ state.mode === 'demo' ? signed(pnlSum) : accountMoney(pnlSum, state.account.currency) }} floating</small>
             </div>
           </div>
           <div class="insight">
@@ -49,7 +50,7 @@ const viewAllPath = computed(() =>
             <div>
               <h3>Active trade plans</h3>
               <p>{{ monitoringCount }} <span class="muted small">monitoring</span></p>
-              <small>Entry conditions checked by worker</small>
+              <small>{{ state.pendingOrders.length ? state.pendingOrders.length + ' pending broker order(s)' : 'Entry conditions checked by worker' }}</small>
             </div>
           </div>
         </div>
@@ -74,12 +75,13 @@ const viewAllPath = computed(() =>
             <div class="risk-panel">
               <div class="row between"><h2>Execution guardrails</h2><Icon name="shield" cls="positive" /></div>
               <div class="risk-row"><span>Execution mode</span><b>{{ state.mode === 'demo' ? 'Simulated' : state.account.mode === 'real' ? 'Real account' : 'Broker demo' }}</b></div>
-              <div class="risk-row"><span>Entries per analysis</span><b>1 maximum</b></div>
-              <div class="risk-row"><span>Order validation</span><b>Server-side</b></div>
-              <div class="risk-row"><span>Max position size</span><b>{{ state.configuration ? money(state.configuration.max_volume_lots) : '0.10' }} lots</b></div>
-              <div class="risk-row"><span>Max risk per entry</span><b>{{ state.configuration ? state.configuration.max_risk_percent : '1' }}%</b></div>
+              <div class="risk-row"><span>New entries</span><b :class="exposureBlocked() ? 'negative' : 'positive'">{{ exposureBlocked() ? 'Blocked · reconcile' : 'Allowed' }}</b></div>
+              <div class="risk-row"><span>Worker snapshot</span><b :class="state.mode === 'api' && !state.health?.fresh ? 'negative' : ''">{{ state.mode === 'demo' ? 'Simulated' : state.health?.fresh ? Math.round(state.health.snapshot_age_seconds) + 's old' : 'Stale' }}</b></div>
+              <div class="risk-row"><span>Quote age</span><b :class="quoteAge > 60 ? 'negative' : ''">{{ Number.isFinite(quoteAge) ? Math.round(quoteAge) + 's' : '—' }}</b></div>
+              <div class="risk-row"><span>Queued commands</span><b>{{ state.mode === 'demo' ? state.commands.filter((c) => c.state === 'QUEUED').length : state.health?.queued_commands ?? 0 }}</b></div>
+              <div class="risk-row"><span>Broker · AI backend</span><b>{{ state.brokerBackend }} · {{ state.aiBackend }}</b></div>
               <div style="height: 1px; background: var(--border); margin-top: 14px" />
-              <p class="hint" style="margin-top: 9px">SL, TP, spread and volume are checked before execution.</p>
+              <p class="hint" style="margin-top: 9px">One entry per analysis. Volume, SL/TP distance, spread and risk limits are enforced by the server, then re-checked by the worker with live broker data.</p>
             </div>
             <div class="help-box"><Icon name="info" /><span>AI suggests a setup. Your trade plan defines when an order can be sent.</span></div>
           </section>

@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useWorkspace } from '~/composables/useWorkspace'
+import { accountMoney, timefmt, humanize } from '~/utils/format'
 
 const { state, openModal, refreshData, disconnect } = useWorkspace()
 
 const connected = computed(() => state.mode === 'api')
+const statusBadge = computed(() =>
+  !connected.value ? 'DEMO' : state.authFailed ? 'UNAUTHORIZED' : state.historyOnly || !state.health?.fresh ? 'HISTORY_ONLY' : 'CONNECTED',
+)
 
 function askDisconnect() {
   openModal({
@@ -31,7 +35,7 @@ function askDisconnect() {
     <div class="page-grid">
       <div class="stack">
         <section class="panel">
-          <div class="panel-head"><h2>Trading terminal</h2><Badge :value="connected ? 'CONNECTED' : 'DEMO'" /></div>
+          <div class="panel-head"><h2>Trading terminal</h2><Badge :value="statusBadge" /></div>
           <div class="panel-body">
             <div class="instrument">
               <div class="gold-symbol">Au</div>
@@ -45,8 +49,14 @@ function askDisconnect() {
               <div><dt>Account mode</dt><dd>{{ state.account.mode.toUpperCase() }}</dd></div>
               <div><dt>Broker server</dt><dd>{{ state.account.server }}</dd></div>
               <div><dt>Trading symbol</dt><dd>{{ state.symbol }}</dd></div>
-              <div><dt>Account currency</dt><dd>{{ state.account.currency }}</dd></div>
-              <div><dt>Terminal permission</dt><dd>{{ state.account.trade_allowed ? 'Trading allowed' : 'Trading disabled' }}</dd></div>
+              <div><dt>Equity / balance</dt><dd>{{ accountMoney(state.account.equity, state.account.currency) }} / {{ Number.isFinite(state.account.balance) ? accountMoney(state.account.balance, state.account.currency) : '—' }}</dd></div>
+              <div><dt>Terminal permission</dt><dd :class="state.account.trade_allowed ? '' : 'negative'">{{ state.account.trade_allowed ? 'Trading allowed' : 'Trading disabled' }}</dd></div>
+              <template v-if="connected">
+                <div><dt>Leverage · margin</dt><dd>{{ state.account.leverage ? '1:' + state.account.leverage : '—' }} · {{ humanize(state.account.margin_mode) || '—' }}</dd></div>
+                <div><dt>Worker snapshot</dt><dd :class="state.health?.fresh ? '' : 'negative'">{{ state.health?.fresh ? `${Math.round(state.health.snapshot_age_seconds)}s old · ${timefmt(state.health.snapshot_updated_at)}` : 'Stale — worker offline' }}</dd></div>
+                <div><dt>Broker · AI backend</dt><dd>{{ state.brokerBackend }} · {{ state.aiBackend }}</dd></div>
+                <div><dt>API origin</dt><dd class="mono small">{{ state.base }}</dd></div>
+              </template>
             </dl>
             <div class="notice" :class="{ amber: !connected }">
               <Icon name="info" />
@@ -85,7 +95,7 @@ function askDisconnect() {
           <ul class="info-list">
             <li><Icon name="check" /><div><strong>Start your Windows worker</strong><small>MT5 must be logged into the intended account.</small></div></li>
             <li><Icon name="check" /><div><strong>Check your API origin</strong><small>Use HTTPS for a hosted backend.</small></div></li>
-            <li><Icon name="check" /><div><strong>Allow this frontend origin</strong><small>Configure FastAPI CORS before connecting.</small></div></li>
+            <li><Icon name="check" /><div><strong>Allow this frontend origin</strong><small>The API’s CORS allows http://localhost:3000 by default. Run this app there, or add your origin on the server.</small></div></li>
             <li><Icon name="shield" /><div><strong>Begin on a demo account</strong><small>Real trading also requires the server’s explicit setting.</small></div></li>
           </ul>
         </div>

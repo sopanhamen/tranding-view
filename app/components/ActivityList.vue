@@ -10,6 +10,7 @@ defineProps<{ events: any[] }>()
     <div v-for="(e, i) in events" :key="e.id ?? i" class="activity-item">
       <div class="activity-icon"><Icon :name="e.type" /></div>
       <div class="grow"><h3>{{ e.title }}</h3><p>{{ e.description }}</p></div>
+      <Badge v-if="e.state" :value="e.state" />
       <span class="time">{{ timefmt(e.at) }}</span>
     </div>
   </div>

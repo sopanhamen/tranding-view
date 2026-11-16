@@ -31,10 +31,10 @@ const endpointsFor = (g: string) => ENDPOINTS.filter((e) => e[0] === g)
     <section class="panel api-group">
       <div class="panel-head"><h2>Service health &amp; documentation</h2></div>
       <div class="api-row"><span class="method">GET</span><code>/health</code><span>Database-backed service health</span></div>
-      <div class="api-row"><span class="method">GET</span><code>/docs · /redoc · /openapi.json</code><span>Swagger, ReDoc and OpenAPI schema</span></div>
+      <div class="api-row"><span class="method">GET</span><code>/docs · /openapi.json</code><span>Swagger UI and OpenAPI schema</span></div>
     </section>
 
-    <div class="notice amber"><Icon name="info" /> Server history, plan pause/resume and queued cancellation are supported in API v0.2. Provider credentials and risk limits remain server-managed; UNKNOWN orders are never retried automatically.</div>
+    <div class="notice amber"><Icon name="info" /> Errors return <code>detail.code</code> (stable) and <code>detail.message</code>. 202 means queued, not executed. Provider credentials and risk limits remain server-managed; UNKNOWN orders are never retried automatically.</div>
     <AppFooter />
   </div>
 </template>

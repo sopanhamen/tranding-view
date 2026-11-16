@@ -11,7 +11,9 @@ npm ci
 npm run dev
 ```
 
-Open the local URL, then Connection → Connect backend. Enter your FastAPI URL and owner key. Allow the frontend origin in FastAPI CORS. Keys stay in memory. Starts in simulated demo mode.
+Open the local URL, then Connection → Connect backend. Enter your FastAPI URL and owner key. Keys stay in memory. Starts in simulated demo mode.
+
+Targets the Gold Market & MT5 API v0.2.0 (`/openapi.json`). Its CORS allows `http://localhost:3000` by default, so run the dev server on port 3000 or add your origin on the server. Copy `.env.example` to `.env` to prefill the API URL (`NUXT_PUBLIC_API_BASE`). If the MT5 worker is offline the app connects in history-only mode and binds the account automatically once the snapshot is fresh.
 
 ```sh
 npm run typecheck

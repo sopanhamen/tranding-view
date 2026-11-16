@@ -6,9 +6,13 @@
 import { reactive, ref, readonly } from 'vue'
 import {
   ApiClient,
-  TERMINAL_STATES,
+  ApiError,
+  errorMessage,
   executionBlocker,
   executionPayload,
+  isFinal,
+  tradeKind,
+  type ExecutionValues,
 } from '~/utils/api'
 import { mergeRecords, eventView } from '~/utils/records'
 import { stamp, uuid, money, sleep } from '~/utils/format'
@@ -19,6 +23,7 @@ export type RouteName =
   | 'plans'
   | 'positions'
   | 'activity'
+  | 'performance'
   | 'connection'
   | 'api'
 
@@ -28,6 +33,7 @@ export const ROUTE_PATHS: Record<RouteName, string> = {
   plans: '/plans',
   positions: '/positions',
   activity: '/activity',
+  performance: '/performance',
   connection: '/connection',
   api: '/api',
 }
@@ -44,13 +50,13 @@ export interface ModalState {
   [key: string]: any
 }
 
+type HistoryKind = 'analyses' | 'plans' | 'commands' | 'events'
+
 interface WorkspaceState {
   route: RouteName
   analyses: any[]
-  history: Record<string, { total: number; hasMore: boolean }>
-  quote: any
-  configuration: any
-  unresolvedCount: number
+  history: Partial<Record<HistoryKind, { limit: number; hasMore: boolean }>>
+  health: any
   authFailed: boolean
   tf: string
   tab: string
@@ -59,14 +65,23 @@ interface WorkspaceState {
   api: ApiClient | null
   base: string
   connection: any
+  connectMode: string
+  historyOnly: boolean
   symbol: string
+  spec: any
   account: any
   analysis: any
   plans: any[]
   positions: any[]
+  pendingOrders: any[]
   commands: any[]
   events: any[]
+  trades: any[]
+  performance: any
+  perfSource: string
+  perfTimeframe: string
   uploads: Upload[]
+  notes: string
   horizon: number
   scenario: string
   query: string
@@ -75,44 +90,80 @@ interface WorkspaceState {
   analysing: boolean
   liveCandles: Record<string, any[]>
   updatedAt: string
+  now: number
   balance: number
   brokerBackend: string
+  aiBackend: string
   showLevels: boolean
   pendingKeys: Map<string, string>
 }
 
+const DEMO_EQUITY = 10000
+const CONTRACT = 100 // XAUUSD: 100 oz per lot, used only for demo estimates
+
 function sampleAnalysis(scenario = 'waiting', symbol = 'XAUUSD', tf = 'M15', horizon = 240) {
+  const ready = scenario === 'ready'
   const blocked = scenario === 'blocked'
-  const buy = scenario === 'ready'
+  const zone: [number, number] = [4030, 4033]
+  const sl = 4021
+  const tps = [4051, 4064]
+  const reference = ready ? 4032.38 : (zone[0] + zone[1]) / 2
+  const now = Date.now()
   return {
     id: 'ana-demo-' + uuid().slice(0, 8),
     created_at: stamp(),
-    expires_at: new Date(Date.now() + 4 * 3600000).toISOString(),
-    reassess_at: new Date(Date.now() + 30 * 60000).toISOString(),
+    market_data_as_of: stamp(),
+    expires_at: new Date(now + horizon * 60000).toISOString(),
+    reassess_at: new Date(now + Math.min(30, horizon) * 60000).toISOString(),
     data: {
       symbol,
       timeframe: tf,
       horizon_minutes: horizon,
-      bias: 'bullish',
-      action: buy ? 'BUY' : 'WAIT',
+      outlook: 'BULLISH',
+      decision: ready ? 'BUY' : 'WAIT',
       proposed_side: 'BUY',
-      entry_condition: `Wait for a closed ${tf} candle above 4,033, then a bullish retest of the entry zone.`,
-      entry_zone: [4030, 4033],
-      entry_rule: {
-        type: 'CLOSE_ABOVE_THEN_RETEST',
-        breakout_level: 4033,
-        retest_zone: [4030, 4033],
-        max_retest_bars: 4,
-      },
-      stop_loss: 4021,
-      take_profits: [4051, 4064],
-      invalidation: { type: 'CANDLE_CLOSE_BELOW', timeframe: tf, price: 4021 },
+      entry_method: ready ? 'MARKET' : 'CONDITIONAL',
+      proposed_order_type: ready ? 'MARKET' : null,
+      entry_condition: ready
+        ? `Price is inside the entry zone after a confirmed ${tf} retest.`
+        : `Wait for a closed ${tf} candle above 4,033, then a bullish retest of the entry zone.`,
+      entry_zone: zone,
+      entry_rule: ready
+        ? null
+        : { type: 'CLOSE_ABOVE_THEN_RETEST', breakout_level: 4033, retest_zone: zone, max_retest_bars: 4 },
+      stop_loss: sl,
+      take_profits: tps,
+      invalidation: { type: 'CANDLE_CLOSE_BELOW', timeframe: tf, price: sl },
       reassess_after_minutes: 30,
+      confidence: 'MEDIUM',
+      reasons: ['H1 trend up: close above EMA20 > EMA50', `${tf} structure bullish (higher highs, higher lows)`],
+      risk_flags: ['Spread 20 points vs ATR 3.1'],
       missing_data: ['economic_calendar'],
       execution_blockers: blocked ? ['ECONOMIC_CALENDAR_UNAVAILABLE'] : [],
       rationale: blocked
         ? 'The economic calendar is unavailable. The server must resolve this blocker before a trade can be submitted.'
         : 'The higher-timeframe structure remains constructive. A pullback into support may offer an entry, but a closed-candle confirmation is required. This is an illustrative demo setup, not a live signal.',
+    },
+    assessment: {
+      entry: {
+        method: ready ? 'MARKET' : 'CONDITIONAL',
+        reference_entry: reference,
+        required_trigger: ready
+          ? 'Current quote inside entry_zone'
+          : `Closed ${tf} candle beyond 4033, then a retest candle closing outside the zone within 4 bars`,
+      },
+      reward_risk: {
+        reference_entry: reference,
+        stop_loss: sl,
+        take_profits: tps.map((price, index) => ({
+          index,
+          price,
+          gross_reward_risk: (price - reference) / (reference - sl),
+          net_reward_risk: null,
+        })),
+      },
+      ai_confidence: { level: 'MEDIUM', calibrated: false },
+      limitations: ['ECONOMIC_CALENDAR_UNAVAILABLE', 'VOLUME_IS_TICK_VOLUME_NOT_TRADED_VOLUME', 'DEMO_DATA'],
     },
     provenance: { model: 'Illustrative demo', market_data_as_of: stamp() },
   }
@@ -122,9 +173,7 @@ const state = reactive<WorkspaceState>({
   route: 'market',
   analyses: [],
   history: {},
-  quote: null,
-  configuration: null,
-  unresolvedCount: 0,
+  health: null,
   authFailed: false,
   tf: 'M15',
   tab: 'positions',
@@ -133,7 +182,10 @@ const state = reactive<WorkspaceState>({
   api: null,
   base: '',
   connection: null,
+  connectMode: 'demo',
+  historyOnly: false,
   symbol: 'XAUUSD',
+  spec: null,
   account: {
     login: 10001,
     server: 'Aurum Practice',
@@ -145,9 +197,15 @@ const state = reactive<WorkspaceState>({
   analysis: null,
   plans: [],
   positions: [],
+  pendingOrders: [],
   commands: [],
   events: [],
+  trades: [],
+  performance: null,
+  perfSource: 'demo',
+  perfTimeframe: '',
   uploads: [],
+  notes: '',
   horizon: 240,
   scenario: 'waiting',
   query: '',
@@ -156,8 +214,10 @@ const state = reactive<WorkspaceState>({
   analysing: false,
   liveCandles: {},
   updatedAt: stamp(),
-  balance: 10000,
+  now: Date.now(),
+  balance: DEMO_EQUITY,
   brokerBackend: 'mock',
+  aiBackend: 'mock',
   showLevels: true,
   pendingKeys: new Map(),
 })
@@ -170,6 +230,8 @@ const modalBusy = ref(false)
 const analysisError = ref('')
 const uploadError = ref('')
 const historyBusy = reactive(new Set<string>())
+const performanceBusy = ref(false)
+const analysisCache = new Map<string, any>()
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -189,15 +251,16 @@ function initDemo() {
   state.mode = 'demo'
   state.analyses = []
   state.history = {}
-  state.quote = null
-  state.configuration = null
-  state.unresolvedCount = 0
+  state.health = null
   state.authFailed = false
-  state.balance = 10000
+  state.balance = DEMO_EQUITY
   state.api = null
   state.connection = { id: 'conn-practice', mode: 'demo' }
+  state.historyOnly = false
   state.symbol = 'XAUUSD'
+  state.spec = { volume_min: 0.01, volume_max: 0.1, volume_step: 0.01, digits: 2, point: 0.01 }
   state.brokerBackend = 'mock'
+  state.aiBackend = 'mock'
   state.liveCandles = {}
   state.networkError = ''
   state.account = {
@@ -210,9 +273,10 @@ function initDemo() {
   }
   state.analysis = sampleAnalysis('waiting', state.symbol, state.tf, state.horizon)
   state.positions = [
-    { ticket: '108492731', symbol: 'XAUUSD', side: 'BUY', volume: 0.02, sl: 4014, tp: 4051, price_open: 4027.4, magic: 261026 },
-    { ticket: '108492618', symbol: 'XAUUSD', side: 'SELL', volume: 0.01, sl: 4053, tp: 4018, price_open: 4040.6, magic: 261026 },
+    { ticket: '108492731', symbol: 'XAUUSD', side: 'BUY', volume: 0.02, sl: 4014, tp: 4051, price_open: 4027.4, managed: true },
+    { ticket: '108492618', symbol: 'XAUUSD', side: 'SELL', volume: 0.01, sl: 4053, tp: 4018, price_open: 4040.6, managed: true },
   ]
+  state.pendingOrders = []
   const a = sampleAnalysis('waiting', state.symbol, state.tf, state.horizon)
   state.plans = [
     {
@@ -220,14 +284,17 @@ function initDemo() {
       analysis_id: a.id,
       state: 'MONITORING',
       analysis: a,
-      data: { sizing: { volume_lots: 0.01 }, take_profit_index: 0 },
+      data: { sizing: { type: 'FIXED_LOTS', volume_lots: 0.01 }, take_profit_index: 0 },
       created_at: stamp(),
     },
   ]
   state.commands = []
+  state.trades = []
+  state.performance = null
+  state.perfSource = 'demo'
   state.analyses = [state.analysis]
   state.events = [
-    { title: 'Market analysis completed', description: 'M15 + H1 · Waiting for a confirmed retest', type: 'spark', at: stamp(), state: 'WAIT' },
+    { title: 'Market analysis completed', description: 'M15 · Wait for a confirmed retest', type: 'spark', at: stamp(), state: 'WAIT' },
     { title: 'Trade plan is monitoring', description: 'XAUUSD · Buy on confirmation · 0.01 lots', type: 'plans', at: new Date(Date.now() - 4 * 60000).toISOString(), state: 'MONITORING' },
     { title: 'Practice position opened', description: 'XAUUSD · Buy 0.02 lots at 4,027.40', type: 'positions', at: new Date(Date.now() - 18 * 60000).toISOString(), state: 'FILLED' },
     { title: 'Practice terminal ready', description: 'Demo account 10001 · Synthetic market data', type: 'plug', at: new Date(Date.now() - 45 * 60000).toISOString(), state: 'CONNECTED' },
@@ -270,15 +337,33 @@ function chartBars(tf = state.tf) {
   return state.mode === 'demo' ? demoCandles(tf) : state.liveCandles[tf] || []
 }
 
+function quote() {
+  if (state.mode === 'api') return state.health?.quote ?? null
+  return { bid: 4032.18, ask: 4032.38, spread: 0.2, spread_points: 20, age_seconds: 0 }
+}
+
 function currentPrice() {
-  if (state.mode === 'api')
-    return state.quote?.bid ?? state.liveCandles[state.tf]?.at(-1)?.close ?? NaN
-  const bars = state.liveCandles[state.tf]
-  return bars?.length ? bars.at(-1)!.close : 4032.18
+  if (state.mode === 'api') return state.health?.quote?.bid ?? state.liveCandles[state.tf]?.at(-1)?.close ?? NaN
+  return 4032.18
 }
 
 function pnl(p: any) {
-  return (currentPrice() - p.price_open) * (p.side === 'BUY' ? 1 : -1) * p.volume * 100
+  if (state.mode === 'api') return Number.isFinite(p.profit) ? p.profit : NaN
+  return (currentPrice() - p.price_open) * (p.side === 'BUY' ? 1 : -1) * p.volume * CONTRACT
+}
+
+function exposureBlocked() {
+  return !!state.health?.new_exposure_blocked || state.commands.some((c) => c.state === 'UNKNOWN')
+}
+
+// Why trading actions are unavailable right now, independent of any analysis.
+function sessionBlocker(): string | null {
+  if (state.mode !== 'api') return null
+  if (state.authFailed) return 'The API key was rejected. Reconnect to continue.'
+  if (!state.connection || state.historyOnly) return 'Trading is paused until the MT5 worker is running and the account is linked.'
+  if (state.networkError) return 'Restore the terminal connection before submitting a new entry.'
+  if (!state.account.trade_allowed) return 'The terminal or account has disabled trading.'
+  return null
 }
 
 // ---- Navigation ----------------------------------------------------------
@@ -315,18 +400,19 @@ function closeModal() {
   modalBusy.value = false
 }
 
-function formError(message: string) {
-  modalError.value = message
+function formError(error: unknown) {
+  modalError.value = errorMessage(error)
 }
 
 // ---- Idempotency ---------------------------------------------------------
 
+// One key per operation + payload, reused on manual retry until the server
+// reports a final, non-UNKNOWN outcome for it.
 function commandKey(kind: string, body: any) {
   const signature = kind + JSON.stringify(body)
   const previous = state.pendingKeys.get(signature)
   const known = state.commands.find((c) => c.idempotency_key === previous)
-  if (known && TERMINAL_STATES.has(known.state) && known.state !== 'UNKNOWN')
-    state.pendingKeys.delete(signature)
+  if (known && isFinal(known) && known.state !== 'UNKNOWN') state.pendingKeys.delete(signature)
   if (!state.pendingKeys.has(signature)) state.pendingKeys.set(signature, uuid())
   return state.pendingKeys.get(signature)!
 }
@@ -342,6 +428,7 @@ function finishDemoCommand(command: any, finish: () => string) {
     if (state.mode !== 'demo' || !state.commands.some((c) => c.id === command.id)) return
     if (command.state === 'CANCELLED') return
     const title = finish()
+    command.final = true
     notify(title, `${state.symbol} · ${command.id}`, 'check', command.state)
     keepCommand(command)
     toast(title + '. Simulated execution only.')
@@ -351,187 +438,228 @@ function finishDemoCommand(command: any, finish: () => string) {
 // ---- Connection + sync ---------------------------------------------------
 
 let refreshEpoch = 0
+let syncTick = 0
 
-function applyWorkspace(data: any) {
-  state.configuration = data.configuration
-  if (data.account) state.account = data.account
-  state.quote = data.quote
-  state.positions = data.positions
-  state.updatedAt = data.updated_at || state.updatedAt
-  state.unresolvedCount = data.unresolved_count
-  for (const [name, key] of [
-    ['analyses', 'analyses'],
-    ['plans', 'plans'],
-    ['commands', 'commands'],
-    ['events', 'events'],
-  ] as const) {
-    const incoming = name === 'events' ? data[key].items.map(eventView) : data[key].items
-    ;(state as any)[name] = mergeRecords((state as any)[name], incoming)
-    state.history[name] = {
-      total: data[key].total,
-      hasMore: (state as any)[name].length < data[key].total,
-    }
-  }
-  if (!state.analysis && state.analyses.length) state.analysis = state.analyses[0]
-  else if (state.analysis) {
-    const latest = state.analyses.find((a) => a.id === state.analysis.id)
-    if (latest) state.analysis = latest
-  }
-  state.authFailed = false
-  state.networkError = data.stale
-    ? 'The worker snapshot is stale. Check the Windows terminal and worker.'
-    : data.quote && !data.quote.fresh
-      ? 'No recent broker quote is available. The market may be closed.'
-      : ''
-  state.page = Math.min(
-    state.page,
-    Math.max(
-      1,
-      Math.ceil(
-        state.positions.filter((p) =>
-          `${p.symbol} ${p.ticket} ${p.side}`.toLowerCase().includes(state.query.toLowerCase()),
-        ).length / 8,
-      ),
-    ),
-  )
+const limitOf = (kind: HistoryKind, fallback = 20) => state.history[kind]?.limit ?? fallback
+
+function keepHistory(kind: HistoryKind, rows: any[]) {
+  const limit = limitOf(kind)
+  ;(state as any)[kind] = mergeRecords((state as any)[kind], rows)
+  state.history[kind] = { limit, hasMore: rows.length >= limit && limit < 200 }
 }
 
-async function refreshData(quiet = false) {
+async function bindConnection(api: ApiClient) {
+  state.connection = await api.connect(state.connectMode)
+  state.historyOnly = false
+}
+
+// Plans only carry analysis_id; attach the saved analysis so cards can show levels.
+async function attachPlanAnalyses(api: ApiClient, epoch: number) {
+  const missing: string[] = []
+  for (const plan of state.plans) {
+    if (plan.analysis) continue
+    const known = state.analyses.find((a) => a.id === plan.analysis_id) ?? analysisCache.get(plan.analysis_id)
+    if (known) plan.analysis = known
+    else missing.push(plan.analysis_id)
+  }
+  const fetched = await Promise.allSettled([...new Set(missing)].slice(0, 5).map((id) => api.analysis(id)))
+  if (epoch !== refreshEpoch) return
+  for (const r of fetched) {
+    if (r.status !== 'fulfilled') continue
+    analysisCache.set(r.value.id, r.value)
+    for (const plan of state.plans) if (plan.analysis_id === r.value.id) plan.analysis = r.value
+  }
+}
+
+// Tiered sync: snapshot data (health, account, positions, pending) every tick;
+// history lists every other tick, or every tick while something is in flight;
+// analyses and candles every sixth tick or on demand. `full` loads everything.
+async function refreshData(quiet = false, full = false) {
   if (state.mode === 'demo') {
     if (!quiet) toast('Practice terminal ready. Prices are illustrative.')
     return
   }
   const epoch = ++refreshEpoch
   const api = state.api!
-  const connection = state.connection.id
+  const tick = ++syncTick
   const tf = state.tf
+  const hot =
+    state.commands.some((c) => !isFinal(c)) || state.plans.some((p) => ['MONITORING', 'QUEUED'].includes(p.state))
+  const every = (n: number) => full || !quiet || tick % n === 0
   try {
-    const data = await api.workspace(connection)
+    const health = await api.workerHealth()
     if (epoch !== refreshEpoch || api !== state.api) return
-    applyWorkspace(data)
-    const recentPlans = new Set(data.plans.items.map((p: any) => p.id))
-    const recentCommands = new Set(data.commands.items.map((c: any) => c.id))
-    const watchers = [
-      ...state.plans
-        .filter((p) => !recentPlans.has(p.id) && ['MONITORING', 'QUEUED', 'SUBMITTING'].includes(p.state))
-        .map((p) => ({ row: p, read: () => api.plan(p.id) })),
-      ...state.commands
-        .filter((c) => !recentCommands.has(c.id) && !TERMINAL_STATES.has(c.state))
-        .map((c) => ({ row: c, read: () => api.command(c.id) })),
-    ]
-    for (const watch of watchers) {
-      const fresh = await watch.read()
-      if (epoch !== refreshEpoch || api !== state.api) return
-      Object.assign(watch.row, fresh)
+    state.health = health
+    state.brokerBackend = health.broker_backend
+    state.aiBackend = health.ai_backend
+    if (health.fresh && !state.connection) await bindConnection(api)
+    const conn = state.connection?.id
+    const live = health.fresh && !!conn
+    const jobs: Record<string, Promise<any> | null> = {
+      status: live ? api.status() : null,
+      positions: live ? api.positions(conn) : null,
+      pending: live ? api.pendingOrders(conn) : null,
+      plans: every(hot ? 1 : 2) ? api.plans(limitOf('plans')) : null,
+      commands: every(hot ? 1 : 2) ? api.commands(limitOf('commands')) : null,
+      events: every(2) ? api.audit(limitOf('events', 50)) : null,
+      analyses: every(6) ? api.analyses(limitOf('analyses')) : null,
+      candles: live && (every(6) || !state.liveCandles[tf]) ? api.candles(conn, tf) : null,
     }
-    if (!data.stale) {
-      const candles = await api.candles(connection, tf)
-      if (epoch !== refreshEpoch || api !== state.api) return
-      state.liveCandles[tf] = candles.closed_candles
-    }
-    if (!quiet) toast('Workspace and account history refreshed.')
-  } catch (error: any) {
+    const keys = Object.keys(jobs)
+    const results = await Promise.allSettled(keys.map((k) => jobs[k]))
     if (epoch !== refreshEpoch || api !== state.api) return
-    state.networkError = error.message
-    state.authFailed = error.message.startsWith('401:')
+    let firstError: unknown = null
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        firstError ??= r.reason
+        return
+      }
+      const v = r.value
+      if (v == null) return
+      switch (keys[i]) {
+        case 'status':
+          state.account = v.account
+          break
+        case 'positions':
+          state.positions = v.positions
+          break
+        case 'pending':
+          state.pendingOrders = v.orders
+          break
+        case 'plans':
+          keepHistory('plans', v.plans)
+          break
+        case 'commands':
+          keepHistory('commands', v.commands)
+          break
+        case 'events': {
+          const limit = limitOf('events', 50)
+          state.events = mergeRecords(state.events, v.events.map(eventView))
+          state.history.events = { limit, hasMore: v.events.length >= limit && limit < 500 }
+          break
+        }
+        case 'analyses':
+          keepHistory('analyses', v.analyses)
+          break
+        case 'candles':
+          state.liveCandles[tf] = v.closed_candles
+          break
+      }
+    })
+    if (!state.analysis && state.analyses.length) state.analysis = state.analyses[0]
+    else if (state.analysis) {
+      const latest = state.analyses.find((a) => a.id === state.analysis.id)
+      if (latest && latest !== state.analysis) state.analysis = { ...state.analysis, ...latest }
+    }
+    await attachPlanAnalyses(api, epoch)
+    if (epoch !== refreshEpoch) return
+    state.updatedAt = health.snapshot_updated_at || stamp()
+    state.authFailed = firstError instanceof ApiError && firstError.status === 401
+    state.networkError = firstError
+      ? errorMessage(firstError)
+      : health.fresh
+        ? ''
+        : 'The MT5 worker snapshot is stale. Check the Windows terminal and worker. History is still available.'
+    if (!quiet) toast(firstError ? 'Refresh finished with errors.' : 'Workspace refreshed.')
+  } catch (error) {
+    if (epoch !== refreshEpoch || api !== state.api) return
+    state.networkError = errorMessage(error)
+    state.authFailed = error instanceof ApiError && error.status === 401
   }
 }
 
-async function loadHistory(kind: string) {
+async function loadHistory(kind: HistoryKind) {
   if (state.mode !== 'api') return
-  const routes: Record<string, string> = {
-    analyses: 'analyses',
-    plans: 'trade-plans',
-    commands: 'commands',
-    events: 'activity',
-  }
+  const fallback = kind === 'events' ? 50 : 20
+  const max = kind === 'events' ? 500 : 200
+  state.history[kind] = { limit: Math.min(max, limitOf(kind, fallback) + fallback), hasMore: false }
+  historyBusy.add(kind)
   try {
-    historyBusy.add(kind)
-    const result = await state.api!.list(routes[kind], state.connection.id, (state as any)[kind].length)
-    ;(state as any)[kind] = mergeRecords(
-      (state as any)[kind],
-      kind === 'events' ? result.items.map(eventView) : result.items,
-    )
-    state.history[kind] = { total: result.total, hasMore: (state as any)[kind].length < result.total }
-  } catch (error: any) {
-    toast(error.message)
+    await refreshData(true, true)
   } finally {
     historyBusy.delete(kind)
   }
 }
 
+function defaultPerfSource() {
+  if (state.brokerBackend === 'mock') return 'mock'
+  return state.account.mode === 'real' ? 'live' : 'demo'
+}
+
+async function loadPerformance() {
+  if (state.mode !== 'api') return
+  performanceBusy.value = true
+  try {
+    const source = state.perfSource
+    const [performance, trades] = await Promise.all([
+      state.api!.performance({ source, timeframe: state.perfTimeframe || undefined }),
+      state.api!.trades(100, undefined, source),
+    ])
+    state.performance = performance
+    state.trades = trades.trades
+  } catch (error) {
+    toast(errorMessage(error))
+  } finally {
+    performanceBusy.value = false
+  }
+}
+
 async function connectApi(values: { base: string; key: string; mode: string }) {
-  const { base, mode } = values
-  const key = values.key
+  const { base, key, mode } = values
   modalError.value = ''
   try {
     if (!base) throw new Error('Enter your FastAPI base URL.')
     if (key.length < 32) throw new Error('Enter your server API key (at least 32 characters).')
     const api = new ApiClient(base, key)
     modalBusy.value = true
-    const [, configuration] = await Promise.all([api.health(), api.request('/api/v1/configuration')])
-    let connection: any
-    let status: any
-    let historyOnly = false
-    try {
-      status = await api.status()
-    } catch (error: any) {
-      if (!error.message.startsWith('503:')) throw error
-      const saved = await api.request('/api/v1/mt5/connections')
-      const matches = saved.items.filter((c: any) => c.mode === mode)
-      if (matches.length !== 1)
-        throw new Error(
-          'Start the worker to select the configured account safely. History-only reconnect needs exactly one saved account in this mode.',
-        )
-      connection = matches[0]
-      historyOnly = true
-    }
-    if (!historyOnly) {
-      if (status.account.mode !== mode)
-        throw new Error('Selected account mode does not match the MT5 terminal.')
+    await api.health()
+    const health = await api.workerHealth()
+    let connection: any = null
+    let account: any = null
+    if (health.fresh) {
+      const status = await api.status()
+      if (status.account.mode !== mode) throw new Error('Selected account mode does not match the MT5 terminal.')
       connection = await api.connect(mode)
+      account = status.account
     }
-    const initial = await api.workspace(connection.id)
+    const symbols = await api.symbols().catch(() => null)
     state.api = api
     state.mode = 'api'
     state.base = api.base
     state.connection = connection
-    state.account = initial.account || {
-      login: connection.login,
-      server: connection.server,
-      mode: connection.mode,
-      equity: NaN,
-      currency: 'USD',
-      trade_allowed: false,
-    }
-    state.symbol = configuration.symbol
-    state.brokerBackend = configuration.broker_backend
+    state.connectMode = mode
+    state.historyOnly = !connection
+    state.health = health
+    state.brokerBackend = health.broker_backend
+    state.aiBackend = health.ai_backend
+    state.account = account || { login: '—', server: '—', mode, equity: NaN, currency: 'USD', trade_allowed: false }
+    state.symbol = symbols?.symbols?.[0] ?? 'XAUUSD'
+    state.spec = symbols?.specification ?? null
     state.analysis = null
     state.analyses = []
     state.history = {}
-    state.quote = null
-    state.configuration = configuration
-    state.unresolvedCount = 0
     state.authFailed = false
+    state.networkError = ''
     state.plans = []
+    state.positions = []
+    state.pendingOrders = []
     state.commands = []
     state.events = []
+    state.trades = []
+    state.performance = null
+    state.perfSource = defaultPerfSource()
     state.liveCandles = {}
-    applyWorkspace(initial)
+    analysisCache.clear()
     closeModal()
     toast(
-      historyOnly
-        ? 'History restored. Trading is paused until the worker reconnects.'
-        : 'API connected. Saved workspace restored.',
+      connection
+        ? 'API connected. Saved workspace restored.'
+        : 'History restored. Trading is paused until the worker reconnects.',
     )
-    if (!initial.stale) await refreshData(true)
-  } catch (e: any) {
+    await refreshData(true, true)
+  } catch (e) {
     modalBusy.value = false
-    formError(
-      e.message.includes('fetch')
-        ? 'Cannot reach the API. Check its URL, HTTPS, CORS and worker status.'
-        : e.message,
-    )
+    formError(e)
   }
 }
 
@@ -543,92 +671,123 @@ function reviewTrade() {
     go('analysis')
     return
   }
-  const a = analysis.data
-  const kind = ['BUY', 'SELL'].includes(a.action) ? 'order' : 'plan'
-  let blocker = executionBlocker(analysis, state.mode)
-  if (state.unresolvedCount > 0 || state.commands.some((c) => c.state === 'UNKNOWN'))
+  const kind = tradeKind(analysis)
+  let blocker = executionBlocker(analysis, state.now)
+  if (!blocker && !kind) blocker = 'This analysis does not propose a trade.'
+  if (exposureBlocked())
     blocker = 'An execution outcome is unknown. Reconcile the existing command before another entry.'
-  if (
-    state.mode === 'api' &&
-    (!state.account.trade_allowed ||
-      (state.account.mode === 'real' && !state.configuration?.allow_real_trading))
-  )
-    blocker = 'The server or terminal has disabled trading for this account.'
+  blocker = sessionBlocker() ?? blocker
   const reserved =
-    state.plans.some((p) => p.analysis_id === analysis.id) ||
-    state.commands.some((c) => c.kind === 'OPEN' && c.data?.analysis_id === analysis.id)
-  if (reserved)
-    blocker = 'This analysis is already reserved for a trade. Generate a fresh analysis for another entry.'
-  openModal({ type: 'review-trade', kind, blocker })
+    state.mode === 'api'
+      ? !!analysis.eligibility?.reserved_for
+      : state.plans.some((p) => p.analysis_id === analysis.id) ||
+        state.commands.some((c) => c.kind === 'OPEN' && c.data?.analysis_id === analysis.id)
+  if (reserved) blocker = 'This analysis is already reserved for a trade. Run a fresh analysis for another entry.'
+  openModal({ type: 'review-trade', kind: kind ?? 'plan', blocker })
 }
 
-async function submitTrade(kind: string, values: { lots: string; tp: string; spread: string; deviation: string }) {
+function demoLots(sizing: any, entry: number, stop: number) {
+  if (sizing.type === 'FIXED_LOTS') return sizing.volume_lots
+  const budget = sizing.type === 'RISK_PERCENT' ? (state.balance * sizing.risk_percent) / 100 : sizing.risk_amount
+  return Math.floor((budget / (Math.abs(entry - stop) * CONTRACT)) * 100) / 100
+}
+
+// Same shape as POST /orders/preview so the review renders one way in both modes.
+function demoPreview(body: any) {
+  const a = state.analysis.data
+  const entry = body.order_type === 'MARKET' ? quote()!.ask : body.price
+  const volume = demoLots(body.sizing, entry, a.stop_loss)
+  const tp = a.take_profits[body.take_profit_index]
+  const stop = Math.abs(entry - a.stop_loss)
+  const target = Math.abs(tp - entry)
+  const loss = stop * volume * CONTRACT
+  const rejections: { code: string; message: string }[] = []
+  if (volume < 0.01) rejections.push({ code: 'VOLUME_TOO_SMALL', message: 'Sizing resolves below the 0.01 lot minimum' })
+  if (volume > 0.1) rejections.push({ code: 'VOLUME_EXCEEDS_LIMIT', message: 'Volume exceeds the 0.10 lot demo limit' })
+  if ((loss / state.balance) * 100 > 1)
+    rejections.push({ code: 'RISK_EXCEEDED', message: 'Stop-loss risk exceeds the 1% demo limit' })
+  return {
+    valid: !rejections.length,
+    order: {
+      order_type: body.order_type,
+      volume,
+      estimated_execution_price: entry,
+      stop_loss: a.stop_loss,
+      take_profit: tp,
+      spread_points: 20,
+      risk: {
+        currency: 'USD',
+        estimated_loss: loss,
+        estimated_profit: target * volume * CONTRACT,
+        risk_percent_of_equity: (loss / state.balance) * 100,
+        gross_reward_risk: target / stop,
+      },
+    },
+    warnings: [],
+    rejections,
+    note: 'Demo estimate. No broker data is used.',
+  }
+}
+
+async function previewTrade(values: ExecutionValues, signal?: AbortSignal) {
+  const body = executionPayload(state.analysis, state.connection.id, values, 'order')
+  if (state.mode === 'demo') return demoPreview(body)
+  return state.api!.preview(body, signal)
+}
+
+async function submitTrade(kind: 'plan' | 'order', values: ExecutionValues) {
   const analysis = state.analysis
   try {
-    if (
-      state.mode === 'api' &&
-      (state.networkError || state.authFailed || state.unresolvedCount > 0 || !state.account.trade_allowed)
-    )
-      throw new Error(
-        'Restore the terminal connection and resolve any unknown execution before submitting a new entry.',
-      )
-    const block = executionBlocker(analysis, state.mode)
+    const session = sessionBlocker()
+    if (session) throw new Error(session)
+    if (state.mode === 'api' && exposureBlocked())
+      throw new Error('Resolve the unknown execution before submitting a new entry.')
+    const block = executionBlocker(analysis, Date.now())
     if (block) throw new Error(block)
     const body = executionPayload(analysis, state.connection.id, values, kind)
-    if (
-      state.mode === 'demo' &&
-      (body.sizing.volume_lots > 0.1 ||
-        body.sizing.volume_lots < 0.01 ||
-        Math.abs(body.sizing.volume_lots * 100 - Math.round(body.sizing.volume_lots * 100)) > 0.00001)
-    )
-      throw new Error('Demo lot size must be 0.01–0.10 in steps of 0.01.')
+    const demoCheck = state.mode === 'demo' && kind === 'order' ? demoPreview(body) : null
+    if (demoCheck && !demoCheck.valid) throw new Error(demoCheck.rejections[0]?.message + '.')
+    const sizeLabel = sizingLabel(body.sizing)
     modalBusy.value = true
     if (kind === 'plan') {
       let plan: any
       if (state.mode === 'api') plan = await state.api!.createPlan(body)
       else {
         await sleep(700)
-        plan = { id: 'plan-' + uuid().slice(0, 8), analysis_id: analysis.id, data: body, state: 'MONITORING' }
+        plan = { id: 'plan-' + uuid().slice(0, 8), analysis_id: analysis.id, data: body, state: 'MONITORING', created_at: stamp() }
       }
       plan.analysis = analysis
-      state.plans.unshift(plan)
-      notify(
-        'Trade plan is monitoring',
-        `${state.symbol} · ${analysis.data.proposed_side} ${money(body.sizing.volume_lots)} lots`,
-        'plans',
-        'MONITORING',
-      )
+      state.plans = mergeRecords(state.plans, [plan])
+      if (analysis.eligibility) analysis.eligibility.reserved_for = 'PLAN'
+      notify('Trade plan is monitoring', `${state.symbol} · ${analysis.data.proposed_side} ${sizeLabel}`, 'plans', 'MONITORING')
       closeModal()
       go('plans')
       toast('Trade plan created. No position has been opened.')
     } else {
       let command: any
-      if (state.mode === 'api') command = await state.api!.order(body, commandKey('OPEN', body))
+      if (state.mode === 'api') command = await state.api!.order(body, commandKey('ORDER', body))
       else {
         await sleep(600)
-        command = { id: 'cmd-' + uuid().slice(0, 8), kind: 'OPEN', state: 'QUEUED', data: body, created_at: stamp() }
+        command = { id: 'cmd-' + uuid().slice(0, 8), kind: 'OPEN', state: 'QUEUED', final: false, data: body, created_at: stamp() }
       }
       keepCommand(command)
-      notify(
-        'Order request queued',
-        `${state.symbol} · ${analysis.data.proposed_side} ${money(body.sizing.volume_lots)} lots`,
-        'clock',
-        'QUEUED',
-      )
+      if (analysis.eligibility) analysis.eligibility.reserved_for = 'ORDER'
+      notify('Order request queued', `${state.symbol} · ${analysis.data.proposed_side} ${sizeLabel}`, 'clock', 'QUEUED')
       closeModal()
       go('activity')
-      toast('Order queued. Waiting for the execution outcome.')
+      toast('Order queued. Waiting for the broker outcome.')
       if (state.mode === 'demo')
         finishDemoCommand(command, () => {
+          const preview = demoPreview(body)
           const p = {
             ticket: String(108500000 + Math.floor(Math.random() * 9999)),
             symbol: state.symbol,
             side: body.side,
-            volume: body.sizing.volume_lots,
+            volume: preview.order.volume,
             sl: analysis.data.stop_loss,
             tp: analysis.data.take_profits[body.take_profit_index],
-            price_open: currentPrice(),
-            magic: 261026,
+            price_open: preview.order.estimated_execution_price,
+            managed: true,
           }
           state.positions.push(p)
           command.state = 'FILLED'
@@ -636,43 +795,54 @@ async function submitTrade(kind: string, values: { lots: string; tp: string; spr
           return 'Demo order filled'
         })
     }
-  } catch (e: any) {
+  } catch (e) {
     modalBusy.value = false
-    formError(e.message)
+    formError(e)
   }
+}
+
+export function sizingLabel(sizing: any): string {
+  if (!sizing) return '—'
+  if (sizing.type === 'RISK_PERCENT') return `${sizing.risk_percent}% risk`
+  if (sizing.type === 'RISK_AMOUNT') return `${money(sizing.risk_amount)} risk`
+  return `${money(sizing.volume_lots)} lots`
 }
 
 async function positionMutation(
   kind: 'CLOSE' | 'PROTECTION',
   ticket: string,
-  input: { closeMode?: string; partialVolume?: string; sl?: string; tp?: string },
+  input: { closeMode?: string; partialVolume?: string; sl?: string; tp?: string; allowWider?: boolean },
 ) {
   const p = state.positions.find((x) => x.ticket === ticket)
   if (!p) return
   try {
+    if (state.mode === 'api' && (state.authFailed || !state.connection))
+      throw new Error('Reconnect to the API before changing a position.')
     let body: any
     if (kind === 'CLOSE') {
       const volume = input.closeMode === 'full' ? null : Number(input.partialVolume)
-      if (volume !== null && (!Number.isFinite(volume) || volume <= 0 || volume > p.volume))
-        throw new Error('Enter a close volume greater than zero and no larger than the position.')
-      if (state.mode === 'demo' && volume !== null && Math.abs(volume * 100 - Math.round(volume * 100)) > 0.00001)
-        throw new Error('Demo close volume must use 0.01-lot increments.')
+      if (volume !== null && (!Number.isFinite(volume) || volume <= 0 || volume >= p.volume))
+        throw new Error('Enter a partial volume greater than zero and smaller than the position. Use full close for the rest.')
+      const step = state.spec?.volume_step
+      if (volume !== null && step && Math.abs(volume / step - Math.round(volume / step)) > 1e-6)
+        throw new Error(`Close volume must use ${step}-lot increments.`)
       body = { connection_id: state.connection.id, volume_lots: volume, max_deviation_points: 20 }
     } else {
       const sl = Number(input.sl)
       const tp = Number(input.tp)
       if (!Number.isFinite(sl) || !Number.isFinite(tp) || sl <= 0 || tp <= 0)
         throw new Error('Enter valid positive SL and TP prices.')
+      const price = currentPrice()
       if (
-        state.mode === 'demo' &&
-        !(p.side === 'BUY' ? sl < currentPrice() && tp > currentPrice() : tp < currentPrice() && sl > currentPrice())
+        Number.isFinite(price) &&
+        !(p.side === 'BUY' ? sl < price && tp > price : tp < price && sl > price)
       )
         throw new Error(
           p.side === 'BUY'
             ? 'For this BUY, SL must be below and TP above the current price.'
             : 'For this SELL, TP must be below and SL above the current price.',
         )
-      body = { connection_id: state.connection.id, stop_loss: sl, take_profit: tp }
+      body = { connection_id: state.connection.id, stop_loss: sl, take_profit: tp, allow_wider_stop: !!input.allowWider }
     }
     modalBusy.value = true
     let command: any
@@ -683,15 +853,10 @@ async function positionMutation(
           : await state.api!.protection(ticket, body, commandKey(kind + ticket, body))
     else {
       await sleep(600)
-      command = { id: 'cmd-' + uuid().slice(0, 8), kind, state: 'QUEUED', data: { ...body, ticket }, created_at: stamp() }
+      command = { id: 'cmd-' + uuid().slice(0, 8), kind, state: 'QUEUED', final: false, data: { ...body, ticket }, created_at: stamp() }
     }
     keepCommand(command)
-    notify(
-      kind === 'CLOSE' ? 'Close request queued' : 'Protection update queued',
-      `${p.symbol} · Ticket ${ticket}`,
-      'clock',
-      'QUEUED',
-    )
+    notify(kind === 'CLOSE' ? 'Close request queued' : 'Protection update queued', `${p.symbol} · Ticket ${ticket}`, 'clock', 'QUEUED')
     closeModal()
     toast('Request queued. The position has not changed yet.')
     if (state.mode === 'demo')
@@ -711,29 +876,27 @@ async function positionMutation(
         command.result = { mock: true, position_ticket: ticket }
         return 'Demo protection updated'
       })
-  } catch (e: any) {
+  } catch (e) {
     modalBusy.value = false
-    formError(e.message)
+    formError(e)
   }
 }
 
-async function planControl(id: string, control: string) {
-  const plan = state.plans.find((p) => p.id === id)
+async function cancelPendingOrder(ticket: string) {
   try {
     modalBusy.value = true
     if (state.mode === 'api') {
-      Object.assign(plan, await (control === 'pause' ? state.api!.pausePlan(id) : state.api!.resumePlan(id)))
+      const body = { connection_id: state.connection.id }
+      keepCommand(await state.api!.cancelPending(ticket, state.connection.id, commandKey('CANCEL_PENDING' + ticket, body)))
     } else {
-      await sleep(350)
-      if (control === 'resume' && executionBlocker(plan.analysis, 'api'))
-        throw new Error('This setup needs a fresh analysis before resuming.')
-      plan.state = control === 'pause' ? 'PAUSED' : 'MONITORING'
+      await sleep(400)
+      state.pendingOrders = state.pendingOrders.filter((o) => o.ticket !== ticket)
     }
     closeModal()
-    toast('Trade plan ' + (control === 'pause' ? 'paused.' : 'resumed.'))
-  } catch (error: any) {
+    toast('Cancellation queued. The order stays live until the broker confirms.')
+  } catch (error) {
     modalBusy.value = false
-    formError(error.message)
+    formError(error)
   }
 }
 
@@ -750,9 +913,9 @@ async function cancelPlan(id: string) {
     notify('Trade plan cancelled', `${state.symbol} · No further entry monitoring`, 'pause', 'CANCELLED')
     closeModal()
     toast('Plan cancelled. Existing positions are unchanged.')
-  } catch (e: any) {
+  } catch (e) {
     modalBusy.value = false
-    formError(e.message)
+    formError(e)
   }
 }
 
@@ -764,14 +927,15 @@ async function cancelQueued(id: string) {
     else {
       if (c.state !== 'QUEUED') throw new Error('The command has left the queue. Inspect its outcome.')
       c.state = 'CANCELLED'
+      c.final = true
       const plan = state.plans.find((p) => p.id === c.data?.plan_id)
       if (plan) plan.state = 'CANCELLED'
     }
     closeModal()
     toast('Queued command cancelled before submission.')
-  } catch (error: any) {
+  } catch (error) {
     modalBusy.value = false
-    formError(error.message)
+    formError(error)
   }
 }
 
@@ -779,7 +943,7 @@ function simulateTrigger(id: string) {
   const p = state.plans.find((x) => x.id === id)
   if (!p || p.state !== 'MONITORING' || state.mode !== 'demo') return
   p.state = 'QUEUED'
-  const c = { id: 'cmd-demo-' + uuid().slice(0, 6), kind: 'OPEN', state: 'QUEUED', data: { analysis_id: p.analysis_id }, created_at: stamp() }
+  const c = { id: 'cmd-demo-' + uuid().slice(0, 6), kind: 'OPEN', state: 'QUEUED', final: false, data: { analysis_id: p.analysis_id, plan_id: p.id }, created_at: stamp() }
   keepCommand(c)
   notify('Demo entry conditions simulated', 'Trade plan is queued for simulated execution.', 'plans', 'QUEUED')
   finishDemoCommand(c, () => {
@@ -790,11 +954,11 @@ function simulateTrigger(id: string) {
       ticket: String(108500000 + Math.floor(Math.random() * 9999)),
       symbol: state.symbol,
       side: a.proposed_side,
-      volume: p.data.sizing.volume_lots,
+      volume: demoLots(p.data.sizing, 4032.18, a.stop_loss),
       sl: a.stop_loss,
       tp: a.take_profits[p.data.take_profit_index || 0],
       price_open: 4032.18,
-      magic: 261026,
+      managed: true,
     })
     return 'Demo trade plan filled'
   })
@@ -806,12 +970,15 @@ function applyScenario(scenario: string) {
   if (state.mode !== 'demo') return
   state.scenario = scenario
   state.analysis = sampleAnalysis(scenario === 'unknown' ? 'waiting' : scenario, state.symbol, state.tf, state.horizon)
+  state.analyses = mergeRecords(state.analyses, [state.analysis])
   if (scenario === 'unknown') {
     state.commands.unshift({
       id: 'cmd-unknown-' + uuid().slice(0, 6),
       kind: 'OPEN',
       state: 'UNKNOWN',
+      final: true,
       data: {},
+      created_at: stamp(),
       result: {
         request_tag: 'gold:demo-uncertain',
         error: 'The broker response was interrupted. Reconcile order and deal history before retrying.',
@@ -884,12 +1051,8 @@ function removeUpload(i: number) {
 
 async function runAnalysis() {
   if (state.analysing) return
-  if (state.mode === 'api' && !state.uploads.length) {
-    analysisError.value = 'Add at least one screenshot for the primary timeframe.'
-    return
-  }
-  if (state.uploads.length && !state.uploads.some((u) => u.tf === state.tf)) {
-    analysisError.value = 'Add a screenshot matching the primary timeframe.'
+  if (state.mode === 'api' && (!state.connection || state.historyOnly)) {
+    analysisError.value = 'Analysis needs a live MT5 snapshot. Start the worker, then try again.'
     return
   }
   for (const u of state.uploads) {
@@ -898,6 +1061,10 @@ async function runAnalysis() {
       analysisError.value = 'Confirm a capture time within the last 15 minutes for every screenshot.'
       return
     }
+  }
+  if (state.notes.length > 500) {
+    analysisError.value = 'Keep notes to 500 characters or fewer.'
+    return
   }
   state.analysing = true
   analysisError.value = ''
@@ -913,6 +1080,7 @@ async function runAnalysis() {
           timeframe: state.tf,
           horizon_minutes: state.horizon,
           charts: state.uploads.map((u) => ({ timeframe: u.tf, captured_at: u.captured })),
+          notes: state.notes.trim() || null,
         }),
       )
       state.uploads.forEach((u) => form.append('images', u.file, u.file.name))
@@ -923,19 +1091,30 @@ async function runAnalysis() {
     }
     state.analysis = result
     state.analyses = mergeRecords(state.analyses, [result])
-    notify('Market analysis completed', `${state.symbol} · ${state.tf} · ${result.data.action}`, 'spark', result.data.action)
+    notify('Market analysis completed', `${state.symbol} · ${state.tf} · ${result.data.decision}`, 'spark', result.data.decision)
     state.analysing = false
     toast('Analysis complete. Review the setup and any blockers.')
-  } catch (e: any) {
+  } catch (e) {
     state.analysing = false
-    analysisError.value = e.message
+    analysisError.value = errorMessage(e)
+  }
+}
+
+async function selectAnalysis(id: string) {
+  const local = state.analyses.find((a) => a.id === id)
+  if (local) state.analysis = local
+  if (state.mode === 'api') {
+    try {
+      state.analysis = await state.api!.analysis(id)
+    } catch (error) {
+      toast(errorMessage(error))
+    }
   }
 }
 
 async function captureChart(svgSource: string) {
   try {
-    if (state.mode === 'api' && !chartBars().length)
-      throw new Error('Load broker candles before capturing a chart.')
+    if (state.mode === 'api' && !chartBars().length) throw new Error('Load broker candles before capturing a chart.')
     const source = svgSource
       .replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ')
       .replace(
@@ -961,14 +1140,15 @@ async function captureChart(svgSource: string) {
     state.uploads.push({ file, preview: URL.createObjectURL(file), tf: state.tf, captured: stamp() })
     go('analysis')
     toast('Chart captured. Review the timestamp before analysis.')
-  } catch (e: any) {
-    toast(e.message)
+  } catch (e) {
+    toast(errorMessage(e))
   }
 }
 
 // ---- Background sync lifecycle -------------------------------------------
 
 let pollTimer: ReturnType<typeof setInterval> | undefined
+let clockTimer: ReturnType<typeof setInterval> | undefined
 let polling = false
 let listenersBound = false
 
@@ -998,6 +1178,7 @@ function startBackgroundSync() {
       polling = false
     }
   }, 2500)
+  clockTimer = setInterval(() => (state.now = Date.now()), 5000)
   document.addEventListener('visibilitychange', onVisibility)
   window.addEventListener('offline', onOffline)
   window.addEventListener('online', onOnline)
@@ -1007,6 +1188,7 @@ function stopBackgroundSync() {
   if (!listenersBound) return
   listenersBound = false
   clearInterval(pollTimer)
+  clearInterval(clockTimer)
   document.removeEventListener('visibilitychange', onVisibility)
   window.removeEventListener('offline', onOffline)
   window.removeEventListener('online', onOnline)
@@ -1029,12 +1211,16 @@ export function useWorkspace() {
     analysisError,
     uploadError,
     historyBusy,
+    performanceBusy,
     // derived helpers
     chartBars,
     currentPrice,
+    quote,
     pnl,
     demoCandles,
     executionBlocker,
+    exposureBlocked,
+    sessionBlocker,
     // navigation
     go,
     setTimeframe,
@@ -1053,10 +1239,12 @@ export function useWorkspace() {
     disconnect,
     refreshData,
     loadHistory,
+    loadPerformance,
     reviewTrade,
+    previewTrade,
     submitTrade,
     positionMutation,
-    planControl,
+    cancelPendingOrder,
     cancelPlan,
     cancelQueued,
     simulateTrigger,
@@ -1065,6 +1253,7 @@ export function useWorkspace() {
     addFiles,
     removeUpload,
     runAnalysis,
+    selectAnalysis,
     captureChart,
   }
 }

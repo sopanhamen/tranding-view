@@ -75,18 +75,44 @@ export function badgeTone(value: string): 'green' | 'red' | 'amber' {
   if (
     [
       'FILLED',
+      'PARTIALLY_FILLED',
+      'PLACED',
       'CLOSED',
       'UPDATED',
       'READY',
       'BUY',
+      'BULLISH',
+      'WIN',
       'CONNECTED',
       'PARTIALLY_CLOSED',
     ].includes(value)
   )
     return 'green'
-  if (['UNKNOWN', 'REJECTED', 'INVALIDATED', 'BLOCKED'].includes(value))
+  if (
+    ['UNKNOWN', 'REJECTED', 'INVALIDATED', 'BLOCKED', 'SELL', 'BEARISH', 'LOSS', 'UNRESOLVED', 'NO_TRADE', 'UNAUTHORIZED'].includes(
+      value,
+    )
+  )
     return 'red'
   return 'amber'
+}
+
+// Compact "in 12m" / "3m ago" relative to now.
+export function relative(v: string | number | Date, now = Date.now()): string {
+  const ms = new Date(v).getTime() - now
+  if (!Number.isFinite(ms)) return '—'
+  const abs = Math.abs(ms)
+  const text =
+    abs < 60000 ? `${Math.round(abs / 1000)}s` : abs < 3600000 ? `${Math.round(abs / 60000)}m` : `${(abs / 3600000).toFixed(1)}h`
+  return ms >= 0 ? `in ${text}` : `${text} ago`
+}
+
+export const percent = (v: unknown, d = 1): string =>
+  Number.isFinite(Number(v)) ? (Number(v) * 100).toFixed(d) + '%' : '—'
+
+export const humanize = (v: unknown): string => {
+  const s = String(v ?? '').replaceAll('_', ' ').toLowerCase()
+  return s ? s[0].toUpperCase() + s.slice(1) : ''
 }
 
 export function download(name: string, content: string, type: string): void {
