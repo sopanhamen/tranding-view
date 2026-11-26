@@ -72,12 +72,10 @@ function askCancel() {
     <div class="card-footer">
       <span class="mono">{{ short(p.id) }}</span>
       <div class="row">
-        <button v-if="state.mode === 'demo' && p.state === 'MONITORING'" class="button ghost" @click="simulateTrigger(p.id)">
-          <Icon name="play" />Simulate trigger
-        </button>
-        <button v-if="p.command_id && state.commands.some((c) => c.id === p.command_id)" class="button ghost" @click="openModal({ type: 'command-details', id: p.command_id })">Command</button>
-        <button class="button ghost" @click="openModal({ type: 'plan-details', id: p.id })">Details</button>
-        <button v-if="cancellable" class="button danger" @click="askCancel">Cancel plan</button>
+        <FormButton v-if="state.mode === 'demo' && p.state === 'MONITORING'" variant="ghost" icon="play" @click="simulateTrigger(p.id)">Simulate trigger</FormButton>
+        <FormButton v-if="p.command_id && state.commands.some((c) => c.id === p.command_id)" variant="ghost" @click="openModal({ type: 'command-details', id: p.command_id })">Command</FormButton>
+        <FormButton variant="ghost" @click="openModal({ type: 'plan-details', id: p.id })">Details</FormButton>
+        <FormButton v-if="cancellable" variant="danger" @click="askCancel">Cancel plan</FormButton>
       </div>
     </div>
   </article>

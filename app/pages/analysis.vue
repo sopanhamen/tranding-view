@@ -21,12 +21,12 @@ const {
 const fileInput = ref<HTMLInputElement | null>(null)
 const dragging = ref(false)
 
-const horizonOptions: [number, string][] = [
-  [30, 'Next 30 minutes'],
-  [60, 'Next hour'],
-  [240, 'Next 4 hours'],
-  [480, 'Next 8 hours'],
-  [1440, 'Next 24 hours'],
+const horizonOptions = [
+  { value: 30, label: 'Next 30 minutes' },
+  { value: 60, label: 'Next hour' },
+  { value: 240, label: 'Next 4 hours' },
+  { value: 480, label: 'Next 8 hours' },
+  { value: 1440, label: 'Next 24 hours' },
 ]
 
 function onFiles(e: Event) {
@@ -56,7 +56,7 @@ function setCaptureTime(i: number, value: string) {
 <template>
   <div>
     <PageHeading title="AI market analysis" desc="Bring your chart. Review the setup before you act.">
-      <button class="button ghost" @click="onCapture"><Icon name="camera" />Use current chart</button>
+      <FormButton variant="ghost" icon="camera" @click="onCapture">Use current chart</FormButton>
     </PageHeading>
 
     <div class="analysis-layout">
@@ -66,20 +66,22 @@ function setCaptureTime(i: number, value: string) {
 
           <div class="form-section">
             <div class="form-grid">
-              <div class="field">
-                <label for="analysis-timeframe">Primary timeframe</label>
-                <select id="analysis-timeframe" :value="state.tf" @change="setTimeframe(($event.target as HTMLSelectElement).value)">
-                  <option v-for="t in TIMEFRAMES" :key="t">{{ t }}</option>
-                </select>
-                <small>Duration of each candle</small>
-              </div>
-              <div class="field">
-                <label for="analysis-horizon">Analysis horizon</label>
-                <select id="analysis-horizon" :value="state.horizon" @change="setHorizon(Number(($event.target as HTMLSelectElement).value))">
-                  <option v-for="[v, label] in horizonOptions" :key="v" :value="v">{{ label }}</option>
-                </select>
-                <small>Scenario window, not a target deadline</small>
-              </div>
+              <FormSelect
+                id="analysis-timeframe"
+                :model-value="state.tf"
+                :options="TIMEFRAMES"
+                label="Primary timeframe"
+                help="Duration of each candle"
+                @update:model-value="setTimeframe"
+              />
+              <FormSelect
+                id="analysis-horizon"
+                :model-value="state.horizon"
+                :options="horizonOptions"
+                label="Analysis horizon"
+                help="Scenario window, not a target deadline"
+                @update:model-value="setHorizon"
+              />
             </div>
           </div>
 
@@ -97,37 +99,41 @@ function setCaptureTime(i: number, value: string) {
               <Icon name="upload" />
               <h3>Add your own chart markup</h3>
               <p>The analysis always uses live MT5 candles and indicators. Screenshots add your drawn context.</p>
-              <button class="button" @click="fileInput?.click()"><Icon name="image" />Choose screenshots</button>
+              <FormButton icon="image" @click="fileInput?.click()">Choose screenshots</FormButton>
               <span class="hint">PNG, JPG or WebP · Up to 8 MB each · Max 6 files</span>
             </div>
-            <div v-if="uploadError" class="field-error" role="status">{{ uploadError }}</div>
+            <FormError :message="uploadError" role="status" />
             <div class="upload-list">
               <template v-for="(u, i) in state.uploads" :key="i">
                 <div class="upload-item">
                   <img class="upload-thumb" :src="u.preview" :alt="`Selected chart screenshot ${i + 1}`" >
                   <div class="grow"><p class="filename">{{ u.file.name }}</p><span class="hint">{{ Math.round(u.file.size / 1024) }} KB</span></div>
-                  <div class="field">
-                    <label :for="`upload-tf-${i}`">Timeframe</label>
-                    <select :id="`upload-tf-${i}`" v-model="u.tf">
-                      <option v-for="t in TIMEFRAMES" :key="t">{{ t }}</option>
-                    </select>
-                  </div>
-                  <button class="icon-button" :aria-label="`Remove ${u.file.name}`" @click="removeUpload(i)"><Icon name="close" /></button>
+                  <FormSelect :id="`upload-tf-${i}`" v-model="u.tf" :options="TIMEFRAMES" label="Timeframe" />
+                  <FormIconButton icon="close" :label="`Remove ${u.file.name}`" @click="removeUpload(i)" />
                 </div>
-                <div class="field" style="margin-left: 63px">
-                  <label :for="`capture-${i}`">Actual capture time (device time)</label>
-                  <input :id="`capture-${i}`" type="datetime-local" :value="localDate(u.captured)" @change="setCaptureTime(i, ($event.target as HTMLInputElement).value)" >
-                </div>
+                <FormInput
+                  :id="`capture-${i}`"
+                  :model-value="localDate(u.captured)"
+                  label="Actual capture time (device time)"
+                  type="datetime-local"
+                  style="margin-left: 63px"
+                  @update:model-value="setCaptureTime(i, $event)"
+                />
               </template>
             </div>
           </div>
 
           <div class="form-section">
-            <div class="field">
-              <label for="analysis-notes">Notes for the analyst <span class="subtle">(optional)</span></label>
-              <textarea id="analysis-notes" v-model="state.notes" rows="3" maxlength="500" placeholder="e.g. Watching the London open; prefer pullback entries." style="resize: none" aria-describedby="notes-help" />
-              <small id="notes-help">{{ state.notes.length }} / 500</small>
-            </div>
+            <FormTextarea
+              id="analysis-notes"
+              v-model="state.notes"
+              label="Notes for the analyst"
+              optional
+              :help="`${state.notes.length} / 500`"
+              rows="3"
+              maxlength="500"
+              placeholder="e.g. Watching the London open; prefer pullback entries."
+            />
           </div>
 
           <div class="form-section">
@@ -142,12 +148,19 @@ function setCaptureTime(i: number, value: string) {
           </div>
 
           <div class="form-section">
-            <button class="button primary full" :disabled="state.analysing || (state.mode === 'api' && (!state.connection || state.historyOnly))" @click="runAnalysis()">
-              <template v-if="state.analysing"><span class="spinner" /> Analysing market… this can take up to a minute</template>
-              <template v-else><Icon name="spark" /> Run analysis</template>
-            </button>
+            <FormButton
+              variant="primary"
+              full
+              icon="spark"
+              :disabled="state.mode === 'api' && (!state.connection || state.historyOnly)"
+              :loading="state.analysing"
+              loading-text="Analysing market… this can take up to a minute"
+              @click="runAnalysis()"
+            >
+              Run analysis
+            </FormButton>
             <p class="hint" style="text-align: center; margin-top: 10px">{{ state.mode === 'demo' ? 'Demo analysis uses an illustrative result. No AI request or trade is sent.' : !state.connection || state.historyOnly ? 'Analysis needs a live MT5 snapshot. Start the worker to continue.' : `Runs on the server with the ${state.aiBackend} AI backend. Nothing is traded.` }}</p>
-            <div v-if="analysisError" class="field-error" role="status">{{ analysisError }}</div>
+            <FormError :message="analysisError" role="status" />
           </div>
         </section>
 

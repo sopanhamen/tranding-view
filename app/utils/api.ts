@@ -15,7 +15,8 @@ export const PENDING_TYPES = ['BUY_LIMIT', 'SELL_LIMIT', 'BUY_STOP', 'SELL_STOP'
 
 export const ENDPOINTS: [string, string, string, string][] = [
   ['Worker', 'GET', '/worker/health', 'Snapshot freshness, quote and queue state'],
-  ['MT5 connection', 'POST', '/mt5/connections', 'Bind the configured terminal account'],
+  ['MT5 connection', 'POST', '/mt5/connections', 'Log the worker into an MT5 account; returns connection_id'],
+  ['MT5 connection', 'GET', '/mt5/connections', 'Saved connections, the active one and terminal login errors'],
   ['MT5 connection', 'GET', '/mt5/status', 'Account and terminal status'],
   ['MT5 connection', 'GET', '/mt5/symbols', 'Configured symbol and broker specification'],
   ['Market', 'GET', '/market/quote', 'Bid, ask, spread and quote age'],
@@ -63,7 +64,7 @@ export class ApiError extends Error {
 // Plain-language copy for the stable `detail.code` values. The server message
 // stays the fallback so new codes still read sensibly.
 const CODE_COPY: Record<string, string> = {
-  UNAUTHORIZED: 'The API key was rejected. Check the owner key and reconnect.',
+  CONNECTION_REQUIRED: 'This session has no MT5 connection. Connect your account again.',
   SNAPSHOT_STALE: 'The MT5 worker snapshot is stale. Check the Windows terminal and worker.',
   QUOTE_STALE: 'No recent broker quote. The market may be closed.',
   ACCOUNT_MISMATCH: 'The terminal is logged into a different account than this connection.',
@@ -226,6 +227,39 @@ export function executionPayload(
   return { ...common, side: analysis.data.proposed_side, order_type: orderType, price }
 }
 
+// ---- Connection ----------------------------------------------------------------
+
+export interface ConnectionValues {
+  connectionType: 'demo' | 'real'
+  login: string
+  password: string
+  server: string
+  broker: string
+}
+
+export function connectionBody(values: ConnectionValues): any {
+  const login = Number(values.login)
+  if (!Number.isInteger(login) || login <= 0) throw new Error('Enter your numeric MT5 account login.')
+  if (!values.password) throw new Error('Enter the trading (not investor) password.')
+  const server = values.server.trim()
+  if (!server) throw new Error('Enter the exact server name from MT5’s login dialog.')
+  return {
+    connectionType: values.connectionType,
+    connection_login: login,
+    password: values.password,
+    server,
+    broker: values.broker.trim() || null,
+  }
+}
+
+// GET /mt5/connections row for this id; `terminal.error` is the worker's last
+// login failure while it switches accounts.
+export function loginError(row: any): string | null {
+  const error = row?.terminal?.error
+  if (!error || row.active) return null
+  return typeof error === 'string' ? error : error.message || JSON.stringify(error)
+}
+
 // ---- Client ------------------------------------------------------------------
 
 interface RequestOptions {
@@ -233,6 +267,7 @@ interface RequestOptions {
   body?: any
   idempotencyKey?: string
   signal?: AbortSignal
+  raw?: boolean
 }
 
 const q = (params: Record<string, unknown>) =>
@@ -244,30 +279,34 @@ const q = (params: Record<string, unknown>) =>
 
 const seg = encodeURIComponent
 
+// The API has no authentication; every data endpoint is scoped by the
+// `connection_id` returned from POST /mt5/connections.
 export class ApiClient {
   base: string
-  key: string
+  connectionId: string | null = null
 
-  constructor(base: string, key: string) {
+  constructor(base: string) {
     this.base = validateBaseUrl(base)
-    this.key = key
   }
 
-  async request(path: string, { method = 'GET', body, idempotencyKey, signal }: RequestOptions = {}): Promise<any> {
-    const headers: Record<string, string> = { 'X-API-Key': this.key }
+  async request(path: string, { method = 'GET', body, idempotencyKey, signal, raw }: RequestOptions = {}): Promise<any> {
+    const headers: Record<string, string> = {}
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey
     if (body && !(body instanceof FormData)) headers['Content-Type'] = 'application/json'
+    const options = {
+      method,
+      headers,
+      body,
+      signal: signal ?? AbortSignal.timeout(path === '/api/v1/analyses' && method === 'POST' ? 110000 : 20000),
+      credentials: 'omit',
+      cache: 'no-store',
+      redirect: 'error',
+      retry: 0,
+    } as any
     try {
-      return await window.aurumFetch(this.base + path, {
-        method,
-        headers,
-        body,
-        signal: signal ?? AbortSignal.timeout(path === '/api/v1/analyses' && method === 'POST' ? 110000 : 20000),
-        credentials: 'omit',
-        cache: 'no-store',
-        redirect: 'error',
-        retry: 0,
-      } as any)
+      if (!raw) return await window.aurumFetch(this.base + path, options)
+      const response = await window.aurumFetch.raw(this.base + path, options)
+      return { status: response.status, data: response._data }
     } catch (error: any) {
       const detail = error.data?.detail
       const status = error.statusCode || error.status || 0
@@ -279,6 +318,11 @@ export class ApiClient {
     }
   }
 
+  // Appends `connection_id` so callers never have to thread it through.
+  scoped(path: string, params: Record<string, unknown> = {}) {
+    return path + q({ ...params, connection_id: this.connectionId })
+  }
+
   health() {
     return this.request('/health')
   }
@@ -287,24 +331,31 @@ export class ApiClient {
     return this.request('/api/v1/worker/health')
   }
 
+  // Resolves to { status, data }: 201 when the terminal is already on this
+  // account, 202 while the worker logs in (poll connections()).
+  connect(body: any) {
+    return this.request('/api/v1/mt5/connections', { method: 'POST', body, raw: true })
+  }
+
+  async connections(): Promise<any[]> {
+    const v = await this.request('/api/v1/mt5/connections')
+    return Array.isArray(v) ? v : (v?.connections ?? [])
+  }
+
   status() {
-    return this.request('/api/v1/mt5/status')
+    return this.request(this.scoped('/api/v1/mt5/status'))
   }
 
   symbols() {
-    return this.request('/api/v1/mt5/symbols')
+    return this.request(this.scoped('/api/v1/mt5/symbols'))
   }
 
-  connect(mode: string) {
-    return this.request('/api/v1/mt5/connections', { method: 'POST', body: { mode } })
+  quote() {
+    return this.request(this.scoped('/api/v1/market/quote'))
   }
 
-  quote(connection: string) {
-    return this.request('/api/v1/market/quote' + q({ connection_id: connection }))
-  }
-
-  candles(connection: string, tf: string, count = 150) {
-    return this.request('/api/v1/market/candles' + q({ connection_id: connection, timeframe: tf, count }))
+  candles(tf: string, count = 150) {
+    return this.request(this.scoped('/api/v1/market/candles', { timeframe: tf, count: Math.min(count, 200) }))
   }
 
   analyse(form: FormData) {
@@ -312,11 +363,11 @@ export class ApiClient {
   }
 
   analyses(limit = 20) {
-    return this.request('/api/v1/analyses' + q({ limit }))
+    return this.request(this.scoped('/api/v1/analyses', { limit }))
   }
 
   analysis(id: string) {
-    return this.request('/api/v1/analyses/' + seg(id))
+    return this.request(this.scoped('/api/v1/analyses/' + seg(id)))
   }
 
   createPlan(body: any) {
@@ -324,15 +375,15 @@ export class ApiClient {
   }
 
   plans(limit = 50, state?: string) {
-    return this.request('/api/v1/trade-plans' + q({ limit, state }))
+    return this.request(this.scoped('/api/v1/trade-plans', { limit, state }))
   }
 
   plan(id: string) {
-    return this.request('/api/v1/trade-plans/' + seg(id))
+    return this.request(this.scoped('/api/v1/trade-plans/' + seg(id)))
   }
 
   cancelPlan(id: string) {
-    return this.request('/api/v1/trade-plans/' + seg(id) + '/cancel', { method: 'POST' })
+    return this.request(this.scoped('/api/v1/trade-plans/' + seg(id) + '/cancel'), { method: 'POST' })
   }
 
   preview(body: any, signal?: AbortSignal) {
@@ -344,31 +395,39 @@ export class ApiClient {
   }
 
   commands(limit = 50, state?: string, kind?: string) {
-    return this.request('/api/v1/commands' + q({ limit, state, kind }))
+    return this.request(this.scoped('/api/v1/commands', { limit, state, kind }))
   }
 
   command(id: string) {
-    return this.request('/api/v1/commands/' + seg(id))
+    return this.request(this.scoped('/api/v1/commands/' + seg(id)))
   }
 
   cancelCommand(id: string) {
-    return this.request('/api/v1/commands/' + seg(id) + '/cancel', { method: 'POST' })
+    return this.request(this.scoped('/api/v1/commands/' + seg(id) + '/cancel'), { method: 'POST' })
   }
 
-  pendingOrders(connection: string) {
-    return this.request('/api/v1/orders/pending' + q({ connection_id: connection }))
+  pendingOrders() {
+    return this.request(this.scoped('/api/v1/orders/pending'))
   }
 
-  cancelPending(ticket: string, connection: string, key: string) {
+  pendingOrder(ticket: string) {
+    return this.request(this.scoped('/api/v1/orders/pending/' + seg(ticket)))
+  }
+
+  cancelPending(ticket: string, key: string) {
     return this.request('/api/v1/orders/pending/' + seg(ticket) + '/cancel', {
       method: 'POST',
-      body: { connection_id: connection },
+      body: { connection_id: this.connectionId },
       idempotencyKey: key,
     })
   }
 
-  positions(connection: string) {
-    return this.request('/api/v1/positions' + q({ connection_id: connection }))
+  positions() {
+    return this.request(this.scoped('/api/v1/positions'))
+  }
+
+  position(ticket: string) {
+    return this.request(this.scoped('/api/v1/positions/' + seg(ticket)))
   }
 
   close(ticket: string, body: any, key: string) {
@@ -384,14 +443,25 @@ export class ApiClient {
   }
 
   trades(limit = 50, outcome?: string, source?: string) {
-    return this.request('/api/v1/trades' + q({ limit, outcome, source }))
+    return this.request(this.scoped('/api/v1/trades', { limit, outcome, source }))
   }
 
-  performance(params: { source: string; timeframe?: string; strategy?: string }) {
-    return this.request('/api/v1/stats/performance' + q(params))
+  trade(id: string) {
+    return this.request(this.scoped('/api/v1/trades/' + seg(id)))
+  }
+
+  performance(params: {
+    source?: string
+    timeframe?: string
+    strategy?: string
+    symbol?: string
+    since?: string
+    until?: string
+  }) {
+    return this.request(this.scoped('/api/v1/stats/performance', params))
   }
 
   audit(limit = 100, filters: Record<string, string> = {}) {
-    return this.request('/api/v1/audit' + q({ limit, ...filters }))
+    return this.request(this.scoped('/api/v1/audit', { limit, ...filters }))
   }
 }

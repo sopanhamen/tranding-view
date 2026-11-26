@@ -95,18 +95,18 @@ function onCrosshair() {
     </div>
     <div class="toolbar-extra">
       <span class="chart-controls-label"><Icon name="bars" /></span>
-      <button class="button" @click="openModal({ type: 'chart-data' })"><Icon name="code" />Candle data</button>
-      <button class="icon-button" aria-label="Use chart as analysis screenshot" title="Use chart screenshot" @click="onCapture"><Icon name="camera" /></button>
-      <button class="icon-button" aria-label="Expand chart" title="Expand chart" @click="openModal({ type: 'expand-chart' })"><Icon name="expand" /></button>
+      <FormButton icon="code" @click="openModal({ type: 'chart-data' })">Candle data</FormButton>
+      <FormIconButton icon="camera" label="Use chart as analysis screenshot" title="Use chart screenshot" @click="onCapture" />
+      <FormIconButton icon="expand" label="Expand chart" title="Expand chart" @click="openModal({ type: 'expand-chart' })" />
     </div>
   </div>
 
   <div class="chart-wrap">
     <div class="drawing-tools" aria-label="Chart tools">
-      <button class="icon-button gold" aria-label="Inspect candle" title="Inspect a candle" @click="onCrosshair"><Icon name="crosshair" /></button>
-      <button class="icon-button" aria-label="Toggle analysis levels" title="Toggle analysis levels" @click="toggleLevels"><Icon name="line" /></button>
-      <button class="icon-button" aria-label="View candle data" title="Candle data" @click="openModal({ type: 'chart-data' })"><Icon name="bars" /></button>
-      <button class="icon-button" aria-label="Capture chart" title="Capture chart" @click="onCapture"><Icon name="camera" /></button>
+      <FormIconButton class="gold" icon="crosshair" label="Inspect candle" title="Inspect a candle" @click="onCrosshair" />
+      <FormIconButton icon="line" label="Toggle analysis levels" title="Toggle analysis levels" @click="toggleLevels" />
+      <FormIconButton icon="bars" label="View candle data" title="Candle data" @click="openModal({ type: 'chart-data' })" />
+      <FormIconButton icon="camera" label="Capture chart" title="Capture chart" @click="onCapture" />
     </div>
     <div class="chart-area" @pointermove="onPointerMove">
       <div class="chart-legend">

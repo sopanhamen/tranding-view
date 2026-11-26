@@ -50,8 +50,8 @@ function askCancel(id: string) {
 <template>
   <div>
     <PageHeading title="Activity &amp; execution" desc="Follow each request all the way to its broker outcome.">
-      <button class="button ghost" @click="refreshData()"><Icon name="refresh" />Refresh status</button>
-      <button class="button ghost" @click="exportHistory">Export commands</button>
+      <FormButton variant="ghost" icon="refresh" @click="refreshData()">Refresh status</FormButton>
+      <FormButton variant="ghost" @click="exportHistory">Export commands</FormButton>
     </PageHeading>
 
     <div v-if="hasUnknown" class="status-banner red">
@@ -73,8 +73,8 @@ function askCancel(id: string) {
                   <td><Badge :value="c.state" /><span v-if="c.final === false" class="spinner" style="margin-left: 6px" aria-label="In progress" /></td>
                   <td class="small muted">{{ detail(c) }}</td>
                   <td class="nowrap" style="text-align: right">
-                    <button class="button ghost" @click="openModal({ type: 'command-details', id: c.id })">Inspect</button>
-                    <button v-if="c.state === 'QUEUED'" class="button danger" @click="askCancel(c.id)">Cancel queued</button>
+                    <FormButton variant="ghost" @click="openModal({ type: 'command-details', id: c.id })">Inspect</FormButton>
+                    <FormButton v-if="c.state === 'QUEUED'" variant="danger" @click="askCancel(c.id)">Cancel queued</FormButton>
                   </td>
                 </tr>
               </tbody>

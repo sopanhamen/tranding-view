@@ -1,5 +1,15 @@
-import { describe, expect, it } from 'vitest'
-import { ApiError, blockingReasons, errorMessage, executionPayload, isFinal, tradeKind } from '../app/utils/api'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  ApiClient,
+  ApiError,
+  blockingReasons,
+  connectionBody,
+  errorMessage,
+  executionPayload,
+  isFinal,
+  loginError,
+  tradeKind,
+} from '../app/utils/api'
 import { eventView } from '../app/utils/records'
 
 const hour = 3600000
@@ -96,5 +106,61 @@ describe('server contract', () => {
       type: 'info',
       state: 'UNKNOWN',
     })
+  })
+})
+
+describe('connection flow', () => {
+  const creds = { connectionType: 'demo' as const, login: '12345678', password: 'pw', server: ' Exness-MT5Trial7 ', broker: '' }
+
+  it('builds the ConnectionCreate body', () => {
+    expect(connectionBody(creds)).toEqual({
+      connectionType: 'demo',
+      connection_login: 12345678,
+      password: 'pw',
+      server: 'Exness-MT5Trial7',
+      broker: null,
+    })
+  })
+
+  it('rejects non-numeric logins and missing secrets', () => {
+    expect(() => connectionBody({ ...creds, login: 'abc' })).toThrow(/numeric/)
+    expect(() => connectionBody({ ...creds, password: '' })).toThrow(/password/)
+    expect(() => connectionBody({ ...creds, server: '  ' })).toThrow(/server/)
+  })
+
+  it('reads the worker login error only while inactive', () => {
+    expect(loginError({ active: false, terminal: { error: 'Invalid account' } })).toBe('Invalid account')
+    expect(loginError({ active: true, terminal: { error: 'old' } })).toBeNull()
+    expect(loginError({ active: false, terminal: { error: { message: 'Bad server' } } })).toBe('Bad server')
+    expect(loginError(undefined)).toBeNull()
+  })
+})
+
+describe('ApiClient', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  const stubFetch = () => {
+    const fetch = Object.assign(vi.fn().mockResolvedValue({}), {
+      raw: vi.fn().mockResolvedValue({ status: 202, _data: { id: 'c1' } }),
+    })
+    vi.stubGlobal('window', { aurumFetch: fetch })
+    return fetch
+  }
+
+  it('scopes reads by connection_id and sends no API key', async () => {
+    const fetch = stubFetch()
+    const api = new ApiClient('http://localhost:8000')
+    api.connectionId = 'c1'
+    await api.plans(20, 'MONITORING')
+    await api.positions()
+    expect(fetch.mock.calls[0][0]).toBe('http://localhost:8000/api/v1/trade-plans?limit=20&state=MONITORING&connection_id=c1')
+    expect(fetch.mock.calls[1][0]).toBe('http://localhost:8000/api/v1/positions?connection_id=c1')
+    expect(fetch.mock.calls[0][1].headers).toEqual({})
+  })
+
+  it('returns the status code from POST /mt5/connections', async () => {
+    stubFetch()
+    const api = new ApiClient('http://localhost:8000')
+    await expect(api.connect({})).resolves.toEqual({ status: 202, data: { id: 'c1' } })
   })
 })

@@ -13,9 +13,6 @@ const label = computed(() => (props.kind === 'events' ? 'events' : props.kind))
 <template>
   <div v-if="state.mode === 'api' && info?.hasMore" class="panel-body row between">
     <span class="hint">Showing the latest {{ count }}</span>
-    <button class="button ghost" :disabled="historyBusy.has(props.kind)" :aria-busy="historyBusy.has(props.kind)" @click="loadHistory(props.kind)">
-      <template v-if="historyBusy.has(props.kind)"><span class="spinner" /> Loading…</template>
-      <template v-else>Load older {{ label }}</template>
-    </button>
+    <FormButton variant="ghost" :loading="historyBusy.has(props.kind)" loading-text="Loading…" @click="loadHistory(props.kind)">Load older {{ label }}</FormButton>
   </div>
 </template>

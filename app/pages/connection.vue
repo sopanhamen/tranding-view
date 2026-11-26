@@ -1,14 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useWorkspace } from '~/composables/useWorkspace'
+import { loginError } from '~/utils/api'
 import { accountMoney, timefmt, humanize } from '~/utils/format'
 
 const { state, openModal, refreshData, disconnect } = useWorkspace()
 
 const connected = computed(() => state.mode === 'api')
 const statusBadge = computed(() =>
-  !connected.value ? 'DEMO' : state.authFailed ? 'UNAUTHORIZED' : state.historyOnly || !state.health?.fresh ? 'HISTORY_ONLY' : 'CONNECTED',
+  !connected.value ? 'DEMO' : state.historyOnly || !state.health?.fresh ? 'HISTORY_ONLY' : 'CONNECTED',
 )
+const terminalState = computed(() => {
+  const failed = loginError(state.connection)
+  if (failed) return `Login failed: ${failed}`
+  return state.connection?.active ? 'Logged into this account' : 'Worker is logging in…'
+})
 
 function askDisconnect() {
   openModal({
@@ -16,7 +22,7 @@ function askDisconnect() {
     title: 'Disconnect this session',
     description: 'Your server and broker continue running.',
     bodyHtml:
-      '<p class="muted small">Disconnecting clears the API key from this page’s memory. It does not cancel trade plans or close positions on the server.</p>',
+      '<p class="muted small">Disconnecting forgets this connection in the page. The MT5 terminal stays logged in, and trade plans and positions on the server are unchanged.</p>',
     label: 'Disconnect session',
     danger: true,
     onConfirm: () => disconnect(),
@@ -26,10 +32,10 @@ function askDisconnect() {
 
 <template>
   <div>
-    <PageHeading title="Connection" desc="One workspace. One configured MT5 account.">
-      <button class="button" :class="connected ? 'ghost' : 'primary'" @click="openModal({ type: 'settings' })">
-        <Icon name="plug" />{{ connected ? 'Manage connection' : 'Connect your API' }}
-      </button>
+    <PageHeading title="Connection" desc="One workspace. One MT5 account per connection.">
+      <FormButton :variant="connected ? 'ghost' : 'primary'" icon="plug" @click="openModal({ type: 'settings' })">
+        {{ connected ? 'Manage connection' : 'Connect your API' }}
+      </FormButton>
     </PageHeading>
 
     <div class="page-grid">
@@ -53,6 +59,8 @@ function askDisconnect() {
               <div><dt>Terminal permission</dt><dd :class="state.account.trade_allowed ? '' : 'negative'">{{ state.account.trade_allowed ? 'Trading allowed' : 'Trading disabled' }}</dd></div>
               <template v-if="connected">
                 <div><dt>Leverage · margin</dt><dd>{{ state.account.leverage ? '1:' + state.account.leverage : '—' }} · {{ humanize(state.account.margin_mode) || '—' }}</dd></div>
+                <div><dt>Terminal login</dt><dd :class="loginError(state.connection) ? 'negative' : ''">{{ terminalState }}</dd></div>
+                <div><dt>Connection id</dt><dd class="mono small">{{ state.connection?.id || '—' }}</dd></div>
                 <div><dt>Worker snapshot</dt><dd :class="state.health?.fresh ? '' : 'negative'">{{ state.health?.fresh ? `${Math.round(state.health.snapshot_age_seconds)}s old · ${timefmt(state.health.snapshot_updated_at)}` : 'Stale — worker offline' }}</dd></div>
                 <div><dt>Broker · AI backend</dt><dd>{{ state.brokerBackend }} · {{ state.aiBackend }}</dd></div>
                 <div><dt>API origin</dt><dd class="mono small">{{ state.base }}</dd></div>
@@ -60,12 +68,12 @@ function askDisconnect() {
             </dl>
             <div class="notice" :class="{ amber: !connected }">
               <Icon name="info" />
-              {{ connected ? 'The backend selects the MT5 account configured on its Windows worker. This UI cannot change broker credentials.' : 'This is a simulated environment. Account balances, market data and executions are examples.' }}
+              {{ connected ? 'Your API logs its Windows worker into this account. Reconnect with other credentials to switch accounts.' : 'This is a simulated environment. Account balances, market data and executions are examples.' }}
             </div>
             <div class="row" style="margin-top: 18px">
-              <button class="button" @click="refreshData()"><Icon name="refresh" />Check connection</button>
-              <button v-if="connected" class="button ghost" @click="askDisconnect">Disconnect session</button>
-              <button v-else class="button ghost" @click="openModal({ type: 'scenarios' })">Explore demo scenarios</button>
+              <FormButton icon="refresh" @click="refreshData()">Check connection</FormButton>
+              <FormButton v-if="connected" variant="ghost" @click="askDisconnect">Disconnect session</FormButton>
+              <FormButton v-else variant="ghost" @click="openModal({ type: 'scenarios' })">Explore demo scenarios</FormButton>
             </div>
           </div>
         </section>
@@ -84,7 +92,7 @@ function askDisconnect() {
               <div class="evidence-item row"><Icon name="database" cls="gold" /><div>Neon PostgreSQL<small>Analyses, plans and commands</small></div></div>
               <div class="evidence-item row"><Icon name="spark" cls="gold" /><div>AI model provider<small>Configured on the backend</small></div></div>
             </div>
-            <p class="hint" style="margin-top: 16px">Neon, OpenAI and MT5 credentials stay on the server. Android MT5 connects separately to the same broker account.</p>
+            <p class="hint" style="margin-top: 16px">Neon and OpenAI credentials stay on the server. The MT5 password is sent once when you connect and stored encrypted there. Android MT5 connects separately to the same broker account.</p>
           </div>
         </section>
       </div>
@@ -93,7 +101,8 @@ function askDisconnect() {
         <div class="panel-head"><h2>Before you connect</h2></div>
         <div class="panel-body">
           <ul class="info-list">
-            <li><Icon name="check" /><div><strong>Start your Windows worker</strong><small>MT5 must be logged into the intended account.</small></div></li>
+            <li><Icon name="check" /><div><strong>Start your Windows worker</strong><small>It logs the MT5 terminal into the account you connect.</small></div></li>
+              <li><Icon name="check" /><div><strong>Have your MT5 login ready</strong><small>Account number, trading password and the exact server name.</small></div></li>
             <li><Icon name="check" /><div><strong>Check your API origin</strong><small>Use HTTPS for a hosted backend.</small></div></li>
             <li><Icon name="check" /><div><strong>Allow this frontend origin</strong><small>The API’s CORS allows http://localhost:3000 by default. Run this app there, or add your origin on the server.</small></div></li>
             <li><Icon name="shield" /><div><strong>Begin on a demo account</strong><small>Real trading also requires the server’s explicit setting.</small></div></li>

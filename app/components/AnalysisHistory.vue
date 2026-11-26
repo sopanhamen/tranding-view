@@ -42,7 +42,7 @@ async function open(id: string) {
 
 <template>
   <section class="panel" style="margin-top: 20px">
-    <div class="panel-head"><h2>Saved analyses</h2><button class="button ghost" @click="exportAnalyses"><Icon name="download" />Export</button></div>
+    <div class="panel-head"><h2>Saved analyses</h2><FormButton variant="ghost" icon="download" @click="exportAnalyses">Export</FormButton></div>
     <div v-if="state.analyses.length" class="table-wrap">
       <table>
         <thead><tr><th>Created (UTC+7)</th><th>Timeframe</th><th>Decision</th><th>Outlook</th><th>Status</th><th /></tr></thead>
@@ -54,8 +54,8 @@ async function open(id: string) {
             <td>{{ humanize(a.data.outlook) }}</td>
             <td><Badge :value="status(a)" /></td>
             <td style="text-align: right">
-              <button class="button ghost" @click="selectAnalysis(a.id)">Use</button>
-              <button class="button ghost" @click="open(a.id)">Details</button>
+              <FormButton variant="ghost" @click="selectAnalysis(a.id)">Use</FormButton>
+              <FormButton variant="ghost" @click="open(a.id)">Details</FormButton>
             </td>
           </tr>
         </tbody>

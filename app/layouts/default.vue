@@ -129,7 +129,7 @@ onUnmounted(() => {
         <div class="sidebar-user">
           <div class="avatar">PM</div>
           <div class="grow"><p>Panha's workspace</p><small>Personal trading account</small></div>
-          <button class="icon-button" aria-label="Open workspace settings" @click="openModal({ type: 'settings' })"><Icon name="settings" /></button>
+          <FormIconButton icon="settings" label="Open workspace settings" @click="openModal({ type: 'settings' })" />
         </div>
       </div>
     </aside>
@@ -137,7 +137,7 @@ onUnmounted(() => {
     <div class="workspace">
       <header class="topbar">
         <div class="row">
-          <button class="icon-button mobile-menu" aria-label="Open navigation" :aria-expanded="state.menu" @click="state.menu = !state.menu"><Icon name="menu" /></button>
+          <FormIconButton class="mobile-menu" icon="menu" label="Open navigation" :aria-expanded="state.menu" @click="state.menu = !state.menu" />
           <div class="breadcrumb"><span>Workspace</span><span class="subtle">/</span><span>{{ routeTitles[currentRoute] }}</span></div>
         </div>
         <div class="topbar-actions">
@@ -154,16 +154,15 @@ onUnmounted(() => {
             }}<Icon name="down" />
           </button>
           <div class="separator" />
-          <button class="icon-button" aria-label="Connection settings" @click="openModal({ type: 'settings' })"><Icon name="settings" /></button>
+          <FormIconButton icon="settings" label="Connection settings" @click="openModal({ type: 'settings' })" />
         </div>
       </header>
 
       <main id="main" class="content" tabindex="-1">
         <div v-if="state.networkError" class="status-banner red">
           <Icon name="info" />
-          <div><strong>{{ state.authFailed ? 'API key rejected' : 'Connection needs attention' }}</strong><p>{{ state.networkError }} Trading actions are paused.</p></div>
-          <button v-if="state.authFailed" class="button ghost" @click="openModal({ type: 'settings' })">Reconnect</button>
-          <button v-else class="button ghost" @click="refreshData()">Retry</button>
+          <div><strong>Connection needs attention</strong><p>{{ state.networkError }} Trading actions are paused.</p></div>
+          <FormButton variant="ghost" @click="refreshData()">Retry</FormButton>
         </div>
         <div v-else-if="state.mode === 'api' && exposureBlocked()" class="status-banner red">
           <Icon name="lock" />

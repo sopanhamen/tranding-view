@@ -35,12 +35,8 @@ const rangeLabel = computed(() =>
     : '0 positions',
 )
 
-function onSearch(e: Event) {
-  state.query = (e.target as HTMLInputElement).value
-  state.page = 1
-}
-function clearSearch() {
-  state.query = ''
+function setQuery(query: string) {
+  state.query = query
   state.page = 1
 }
 </script>
@@ -48,7 +44,7 @@ function clearSearch() {
 <template>
   <div>
     <PageHeading title="Open positions" desc="Manage exposure. Know exactly what is still open.">
-      <button class="button ghost" @click="refreshData()"><Icon name="refresh" />Refresh positions</button>
+      <FormButton variant="ghost" icon="refresh" @click="refreshData()">Refresh positions</FormButton>
     </PageHeading>
 
     <div class="summary-grid">
@@ -69,11 +65,14 @@ function clearSearch() {
 
     <section class="panel">
       <div class="toolbar">
-        <div class="search">
-          <Icon name="search" />
-          <input id="position-search" :value="state.query" placeholder="Search symbol or ticket…" aria-label="Search positions" @input="onSearch" >
-          <button v-if="state.query" class="icon-button" aria-label="Clear position search" @click="clearSearch"><Icon name="close" /></button>
-        </div>
+        <FormSearch
+          id="position-search"
+          :model-value="state.query"
+          label="Search positions"
+          clear-label="Clear position search"
+          placeholder="Search symbol or ticket…"
+          @update:model-value="setQuery"
+        />
         <span class="badge" :class="state.account.mode === 'real' ? 'red' : 'amber'">{{ state.account.mode.toUpperCase() }} ACCOUNT</span>
       </div>
 
@@ -87,9 +86,9 @@ function clearSearch() {
         <div class="table-footer">
           <span>{{ rangeLabel }}</span>
           <div class="pagination">
-            <button class="icon-button" aria-label="Previous page" :disabled="state.page <= 1" @click="state.page = Math.max(1, state.page - 1)"><Icon name="chevron" cls="reverse" /></button>
+            <FormIconButton icon="chevron" icon-cls="reverse" label="Previous page" :disabled="state.page <= 1" @click="state.page = Math.max(1, state.page - 1)" />
             <span>Page {{ state.page }} / {{ pageCount }}</span>
-            <button class="icon-button" aria-label="Next page" :disabled="start + SIZE >= matches.length" @click="state.page++"><Icon name="chevron" /></button>
+            <FormIconButton icon="chevron" label="Next page" :disabled="start + SIZE >= matches.length" @click="state.page++" />
           </div>
         </div>
       </div>
@@ -114,7 +113,7 @@ function clearSearch() {
               <td class="mono">{{ money(o.sl) }} / {{ money(o.tp) }}</td>
               <td class="mono">{{ o.expiration ? datefmt(o.expiration) : 'GTC' }}</td>
               <td style="text-align: right">
-                <button class="button ghost" :disabled="!o.managed" :title="o.managed ? undefined : 'Only app-placed orders can be cancelled'" @click="askCancelPending(o)">Cancel order</button>
+                <FormButton variant="ghost" :disabled="!o.managed" :title="o.managed ? undefined : 'Only app-placed orders can be cancelled'" @click="askCancelPending(o)">Cancel order</FormButton>
               </td>
             </tr>
           </tbody>

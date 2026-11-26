@@ -6,12 +6,14 @@
 import { reactive, ref, readonly } from 'vue'
 import {
   ApiClient,
-  ApiError,
+  connectionBody,
   errorMessage,
   executionBlocker,
   executionPayload,
   isFinal,
+  loginError,
   tradeKind,
+  type ConnectionValues,
   type ExecutionValues,
 } from '~/utils/api'
 import { mergeRecords, eventView } from '~/utils/records'
@@ -57,7 +59,6 @@ interface WorkspaceState {
   analyses: any[]
   history: Partial<Record<HistoryKind, { limit: number; hasMore: boolean }>>
   health: any
-  authFailed: boolean
   tf: string
   tab: string
   menu: boolean
@@ -65,7 +66,7 @@ interface WorkspaceState {
   api: ApiClient | null
   base: string
   connection: any
-  connectMode: string
+  connectMode: 'demo' | 'real'
   historyOnly: boolean
   symbol: string
   spec: any
@@ -174,7 +175,6 @@ const state = reactive<WorkspaceState>({
   analyses: [],
   history: {},
   health: null,
-  authFailed: false,
   tf: 'M15',
   tab: 'positions',
   menu: false,
@@ -252,7 +252,6 @@ function initDemo() {
   state.analyses = []
   state.history = {}
   state.health = null
-  state.authFailed = false
   state.balance = DEMO_EQUITY
   state.api = null
   state.connection = { id: 'conn-practice', mode: 'demo' }
@@ -359,8 +358,7 @@ function exposureBlocked() {
 // Why trading actions are unavailable right now, independent of any analysis.
 function sessionBlocker(): string | null {
   if (state.mode !== 'api') return null
-  if (state.authFailed) return 'The API key was rejected. Reconnect to continue.'
-  if (!state.connection || state.historyOnly) return 'Trading is paused until the MT5 worker is running and the account is linked.'
+  if (!state.connection || state.historyOnly) return 'Trading is paused until the MT5 worker is logged into this account.'
   if (state.networkError) return 'Restore the terminal connection before submitting a new entry.'
   if (!state.account.trade_allowed) return 'The terminal or account has disabled trading.'
   return null
@@ -448,9 +446,30 @@ function keepHistory(kind: HistoryKind, rows: any[]) {
   state.history[kind] = { limit, hasMore: rows.length >= limit && limit < 200 }
 }
 
-async function bindConnection(api: ApiClient) {
-  state.connection = await api.connect(state.connectMode)
-  state.historyOnly = false
+// After a 202 the worker is still logging the terminal in. Poll GET
+// /mt5/connections until this connection is `active` or reports a login error;
+// null means it is still switching (or the list is unreadable) when the wait
+// runs out; the background sync keeps checking after that.
+async function awaitLogin(api: ApiClient, id: string, timeout = 30000) {
+  const until = Date.now() + timeout
+  while (Date.now() < until) {
+    const rows = await api.connections().catch(() => [])
+    const row = rows.find((c) => c.id === id)
+    if (row?.active) return row
+    const failed = loginError(row)
+    if (failed) throw new Error('MT5 login failed: ' + failed)
+    await sleep(1500)
+  }
+  return null
+}
+
+// Keep the session's view of its connection in step with the worker: trading
+// opens once the terminal is on this account and pauses if it switches away.
+function applyLink(rows: any[]) {
+  const row = rows.find((c) => c.id === state.connection?.id)
+  if (!row) return
+  state.connection = { ...state.connection, ...row }
+  state.historyOnly = !row.active
 }
 
 // Plans only carry analysis_id; attach the saved analysis so cards can show levels.
@@ -492,23 +511,31 @@ async function refreshData(quiet = false, full = false) {
     state.health = health
     state.brokerBackend = health.broker_backend
     state.aiBackend = health.ai_backend
-    if (health.fresh && !state.connection) await bindConnection(api)
-    const conn = state.connection?.id
-    const live = health.fresh && !!conn
+    // While the terminal is still switching, check the login every tick.
+    let linkError: unknown = null
+    if (health.fresh && (state.historyOnly || every(6))) {
+      const rows = await api.connections().catch((error) => {
+        linkError = error
+        return []
+      })
+      if (epoch !== refreshEpoch || api !== state.api) return
+      applyLink(rows)
+    }
+    const live = health.fresh && !state.historyOnly
     const jobs: Record<string, Promise<any> | null> = {
       status: live ? api.status() : null,
-      positions: live ? api.positions(conn) : null,
-      pending: live ? api.pendingOrders(conn) : null,
+      positions: live ? api.positions() : null,
+      pending: live ? api.pendingOrders() : null,
       plans: every(hot ? 1 : 2) ? api.plans(limitOf('plans')) : null,
       commands: every(hot ? 1 : 2) ? api.commands(limitOf('commands')) : null,
       events: every(2) ? api.audit(limitOf('events', 50)) : null,
       analyses: every(6) ? api.analyses(limitOf('analyses')) : null,
-      candles: live && (every(6) || !state.liveCandles[tf]) ? api.candles(conn, tf) : null,
+      candles: live && (every(6) || !state.liveCandles[tf]) ? api.candles(tf) : null,
     }
     const keys = Object.keys(jobs)
     const results = await Promise.allSettled(keys.map((k) => jobs[k]))
     if (epoch !== refreshEpoch || api !== state.api) return
-    let firstError: unknown = null
+    let firstError: unknown = linkError
     results.forEach((r, i) => {
       if (r.status === 'rejected') {
         firstError ??= r.reason
@@ -554,17 +581,18 @@ async function refreshData(quiet = false, full = false) {
     await attachPlanAnalyses(api, epoch)
     if (epoch !== refreshEpoch) return
     state.updatedAt = health.snapshot_updated_at || stamp()
-    state.authFailed = firstError instanceof ApiError && firstError.status === 401
+    const failedLogin = loginError(state.connection)
     state.networkError = firstError
       ? errorMessage(firstError)
-      : health.fresh
-        ? ''
-        : 'The MT5 worker snapshot is stale. Check the Windows terminal and worker. History is still available.'
+      : !health.fresh
+        ? 'The MT5 worker snapshot is stale. Check the Windows terminal and worker. History is still available.'
+        : failedLogin
+          ? `MT5 login failed: ${failedLogin}. Reconnect with the correct credentials.`
+          : ''
     if (!quiet) toast(firstError ? 'Refresh finished with errors.' : 'Workspace refreshed.')
   } catch (error) {
     if (epoch !== refreshEpoch || api !== state.api) return
     state.networkError = errorMessage(error)
-    state.authFailed = error instanceof ApiError && error.status === 401
   }
 }
 
@@ -604,41 +632,55 @@ async function loadPerformance() {
   }
 }
 
-async function connectApi(values: { base: string; key: string; mode: string }) {
-  const { base, key, mode } = values
+// Step 1 of every flow: POST /mt5/connections stores the credentials and makes
+// the worker log the terminal in. Its id scopes every later request. If the
+// worker is offline or still switching, history opens and trading stays paused
+// until refreshData sees the connection become active.
+async function connectApi(values: ConnectionValues & { base: string }) {
+  const { base, ...credentials } = values
   modalError.value = ''
   try {
     if (!base) throw new Error('Enter your FastAPI base URL.')
-    if (key.length < 32) throw new Error('Enter your server API key (at least 32 characters).')
-    const api = new ApiClient(base, key)
+    const api = new ApiClient(base)
+    const body = connectionBody(credentials)
     modalBusy.value = true
     await api.health()
     const health = await api.workerHealth()
-    let connection: any = null
-    let account: any = null
-    if (health.fresh) {
-      const status = await api.status()
-      if (status.account.mode !== mode) throw new Error('Selected account mode does not match the MT5 terminal.')
-      connection = await api.connect(mode)
-      account = status.account
+    const { status: created, data } = await api.connect(body)
+    const id = data?.id ?? data?.connection_id
+    if (!id) throw new Error('The API did not return a connection id.')
+    api.connectionId = id
+    const { password: _password, ...account } = body
+    let connection: any = { ...account, ...data, id, active: created === 201 }
+    if (!connection.active && health.fresh) {
+      const row = await awaitLogin(api, id)
+      if (row) connection = { ...connection, ...row }
     }
+    const live = connection.active && health.fresh
+    const status = live ? await api.status() : null
     const symbols = await api.symbols().catch(() => null)
     state.api = api
     state.mode = 'api'
     state.base = api.base
     state.connection = connection
-    state.connectMode = mode
-    state.historyOnly = !connection
+    state.connectMode = body.connectionType
+    state.historyOnly = !live
     state.health = health
     state.brokerBackend = health.broker_backend
     state.aiBackend = health.ai_backend
-    state.account = account || { login: '—', server: '—', mode, equity: NaN, currency: 'USD', trade_allowed: false }
+    state.account = status?.account ?? {
+      login: body.connection_login,
+      server: body.server,
+      mode: body.connectionType,
+      equity: NaN,
+      currency: 'USD',
+      trade_allowed: false,
+    }
     state.symbol = symbols?.symbols?.[0] ?? 'XAUUSD'
     state.spec = symbols?.specification ?? null
     state.analysis = null
     state.analyses = []
     state.history = {}
-    state.authFailed = false
     state.networkError = ''
     state.plans = []
     state.positions = []
@@ -816,7 +858,7 @@ async function positionMutation(
   const p = state.positions.find((x) => x.ticket === ticket)
   if (!p) return
   try {
-    if (state.mode === 'api' && (state.authFailed || !state.connection))
+    if (state.mode === 'api' && !state.connection)
       throw new Error('Reconnect to the API before changing a position.')
     let body: any
     if (kind === 'CLOSE') {
@@ -887,7 +929,7 @@ async function cancelPendingOrder(ticket: string) {
     modalBusy.value = true
     if (state.mode === 'api') {
       const body = { connection_id: state.connection.id }
-      keepCommand(await state.api!.cancelPending(ticket, state.connection.id, commandKey('CANCEL_PENDING' + ticket, body)))
+      keepCommand(await state.api!.cancelPending(ticket, commandKey('CANCEL_PENDING' + ticket, body)))
     } else {
       await sleep(400)
       state.pendingOrders = state.pendingOrders.filter((o) => o.ticket !== ticket)
@@ -1153,7 +1195,7 @@ let polling = false
 let listenersBound = false
 
 async function poll() {
-  if (state.mode === 'api' && !document.hidden && state.api && !state.authFailed) await refreshData(true)
+  if (state.mode === 'api' && !document.hidden && state.api) await refreshData(true)
 }
 
 function onVisibility() {

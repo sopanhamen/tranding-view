@@ -11,9 +11,9 @@ npm ci
 npm run dev
 ```
 
-Open the local URL, then Connection → Connect backend. Enter your FastAPI URL and owner key. Keys stay in memory. Starts in simulated demo mode.
+Open the local URL, then Connection → Connect backend. Enter your FastAPI URL and MT5 account (type, login, trading password, server). The API needs no key: `POST /api/v1/mt5/connections` logs the worker into that account and returns the `connection_id` sent with every other request. The password is not kept in the page. Starts in simulated demo mode.
 
-Targets the Gold Market & MT5 API v0.2.0 (`/openapi.json`). Its CORS allows `http://localhost:3000` by default, so run the dev server on port 3000 or add your origin on the server. Copy `.env.example` to `.env` to prefill the API URL (`NUXT_PUBLIC_API_BASE`). If the MT5 worker is offline the app connects in history-only mode and binds the account automatically once the snapshot is fresh.
+Targets the Gold Market & MT5 API v0.2.0 (`/openapi.json`). Its CORS allows `http://localhost:3000` by default, so run the dev server on port 3000 or add your origin on the server. Copy `.env.example` to `.env` to prefill the API URL (`NUXT_PUBLIC_API_BASE`). If the worker is offline or still logging in (202), the app opens in history-only mode and polls `GET /api/v1/mt5/connections` until the connection is `active`; a failed login (`terminal.error`) is shown in the connection banner.
 
 ```sh
 npm run typecheck

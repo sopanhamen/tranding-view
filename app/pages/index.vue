@@ -20,8 +20,8 @@ const viewAllPath = computed(() =>
 <template>
   <div>
     <PageHeading title="Market workspace" desc="A clear view of the market. A deliberate next move.">
-      <button class="button ghost" @click="refreshData()"><Icon name="refresh" />Refresh</button>
-      <button class="button primary" @click="go('analysis')"><Icon name="spark" />Analyse market</button>
+      <FormButton variant="ghost" icon="refresh" @click="refreshData()">Refresh</FormButton>
+      <FormButton variant="primary" icon="spark" @click="go('analysis')">Analyse market</FormButton>
     </PageHeading>
 
     <div class="workspace-grid">

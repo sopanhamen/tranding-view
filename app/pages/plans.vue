@@ -21,7 +21,7 @@ function newPlan() {
 <template>
   <div>
     <PageHeading title="Trade plans" desc="Let conditions lead. Keep every entry intentional.">
-      <button class="button primary" @click="newPlan"><Icon name="plans" />New trade plan</button>
+      <FormButton variant="primary" icon="plans" @click="newPlan">New trade plan</FormButton>
     </PageHeading>
 
     <div class="summary-grid">

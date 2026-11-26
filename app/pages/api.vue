@@ -16,7 +16,7 @@ const endpointsFor = (g: string) => ENDPOINTS.filter((e) => e[0] === g)
     </PageHeading>
 
     <div class="notice" style="margin-bottom: 20px">
-      <Icon name="code" /> All application routes use <code>/api/v1</code> and <code>X-API-Key</code>. Order, close and protection requests also require an <code>Idempotency-Key</code>. Credentials are held in memory for this session only.
+      <Icon name="code" /> All application routes use <code>/api/v1</code> and need no API key. Every flow starts with <code>POST /mt5/connections</code>; its <code>id</code> is sent as <code>connection_id</code> on every other request. Order, close, protection and pending-cancel requests also require an <code>Idempotency-Key</code>.
     </div>
 
     <section v-for="g in groups" :key="g" class="panel api-group">

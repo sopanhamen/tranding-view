@@ -65,7 +65,7 @@ function onReview() {
       title="Your next move starts here"
       description="Run an analysis on the live MT5 snapshot. Screenshots are optional."
     >
-      <button class="button primary" @click="go('analysis')">Analyse market</button>
+      <FormButton variant="primary" @click="go('analysis')">Analyse market</FormButton>
     </EmptyState>
   </section>
 
@@ -73,9 +73,7 @@ function onReview() {
     <div class="analysis-head">
       <div class="row between">
         <div class="row"><div class="ai-icon"><Icon name="spark" /></div><h2>AI market analysis</h2></div>
-        <button class="icon-button" aria-label="View analysis details" @click="openModal({ type: 'analysis-details' })">
-          <Icon name="more" />
-        </button>
+        <FormIconButton icon="more" label="View analysis details" @click="openModal({ type: 'analysis-details' })" />
       </div>
       <p>
         {{ state.mode === 'demo' ? 'Illustrative setup' : esc(analysis.provenance?.model || 'AI model') }}
@@ -153,9 +151,9 @@ function onReview() {
     </div>
 
     <div class="analysis-footer">
-      <button class="button primary full" :disabled="!kind" @click="onReview">
-        <Icon :name="kind === 'order' ? 'arrow' : 'plans'" />{{ kind === 'order' ? 'Review order' : kind === 'plan' ? 'Review trade plan' : 'Nothing to execute' }}
-      </button>
+      <FormButton variant="primary" full :icon="kind === 'order' ? 'arrow' : 'plans'" :disabled="!kind" @click="onReview">
+        {{ kind === 'order' ? 'Review order' : kind === 'plan' ? 'Review trade plan' : 'Nothing to execute' }}
+      </FormButton>
       <div class="analysis-footnote">
         <span>{{ blocked ? 'Resolve blockers before execution' : 'One entry per analysis · Server risk checks' }}</span>
         <button class="details-toggle" @click="openModal({ type: 'analysis-details' })">Details <Icon name="chevron" /></button>

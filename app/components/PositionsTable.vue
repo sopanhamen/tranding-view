@@ -17,7 +17,7 @@ const pl = (p: any) => pnl(p)
     title="No open positions"
     description="Your positions appear here after the broker confirms an entry."
   >
-    <button class="button ghost" @click="go('analysis')"><Icon name="spark" />Analyse market</button>
+    <FormButton variant="ghost" icon="spark" @click="go('analysis')">Analyse market</FormButton>
   </EmptyState>
 
   <template v-else>
@@ -54,23 +54,21 @@ const pl = (p: any) => pnl(p)
             </td>
             <td>
               <div class="table-actions" style="justify-content: flex-end">
-                <button
-                  class="icon-button"
+                <FormIconButton
+                  icon="settings"
+                  :label="`Edit protection for position ${p.ticket}`"
                   :disabled="locked(p)"
                   :title="locked(p) ? 'Only app-created positions can be modified' : 'Edit SL / TP'"
-                  :aria-label="`Edit protection for position ${p.ticket}`"
                   @click="openModal({ type: 'protection', ticket: p.ticket })"
-                >
-                  <Icon name="settings" />
-                </button>
-                <button
-                  class="button ghost"
+                />
+                <FormButton
+                  variant="ghost"
                   :disabled="locked(p)"
                   :title="locked(p) ? 'Only app-created positions can be closed' : undefined"
                   @click="openModal({ type: 'close-position', ticket: p.ticket })"
                 >
                   Close
-                </button>
+                </FormButton>
               </div>
             </td>
           </tr>

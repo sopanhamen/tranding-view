@@ -30,13 +30,24 @@ const type = computed(() => modal.value?.type ?? '')
 
 // --- connection form state ---
 const connBase = ref('')
-const connKey = ref('')
-const connMode = ref('demo')
-const connShowKey = ref(false)
+const connMode = ref<'demo' | 'real'>('demo')
+const connLogin = ref('')
+const connPassword = ref('')
+const connServer = ref('')
+const connBroker = ref('')
 const connRealConfirm = ref(false)
+const CONN_MODES: { value: 'demo' | 'real'; label: string }[] = [
+  { value: 'demo', label: 'Demo account' },
+  { value: 'real', label: 'Real account' },
+]
 
 // --- review-trade form state ---
 const SIZING_DEFAULTS: Record<SizingType, string> = { FIXED_LOTS: '0.01', RISK_PERCENT: '0.5', RISK_AMOUNT: '50' }
+const SIZING_TYPES: { value: SizingType; label: string }[] = [
+  { value: 'FIXED_LOTS', label: 'Fixed lots' },
+  { value: 'RISK_PERCENT', label: '% of equity' },
+  { value: 'RISK_AMOUNT', label: 'Risk amount' },
+]
 const sizingType = ref<SizingType>('FIXED_LOTS')
 const sizingValue = ref('0.01')
 const tradeTp = ref('0')
@@ -114,7 +125,7 @@ const description = computed(() => {
   if (!m) return ''
   switch (m.type) {
     case 'settings':
-      return 'Use your API’s owner key. Broker and provider secrets stay on the server.'
+      return 'Log the worker’s MT5 terminal into your account. The password is stored encrypted on the server.'
     case 'scenarios':
       return 'All scenarios use illustrative data. No real orders or AI requests are sent.'
     case 'review-trade':
@@ -225,10 +236,14 @@ watch(
       return
     }
     if (m.type === 'settings') {
+      // Prefill everything but the password from the current API session.
+      const c = state.mode === 'api' ? state.connection : null
       connBase.value = defaultBase()
-      connKey.value = ''
-      connMode.value = state.connectMode || 'demo'
-      connShowKey.value = false
+      connMode.value = c?.connectionType ?? state.connectMode
+      connLogin.value = c?.connection_login ? String(c.connection_login) : ''
+      connPassword.value = ''
+      connServer.value = c?.server ?? ''
+      connBroker.value = c?.broker ?? ''
       connRealConfirm.value = false
     }
     if (m.type === 'review-trade') {
@@ -277,7 +292,14 @@ function doConnect() {
     modalError.value = 'Confirm the real-account connection before continuing.'
     return
   }
-  connectApi({ base: connBase.value.trim(), key: connKey.value, mode: connMode.value })
+  connectApi({
+    base: connBase.value.trim(),
+    connectionType: connMode.value,
+    login: connLogin.value,
+    password: connPassword.value,
+    server: connServer.value,
+    broker: connBroker.value,
+  })
 }
 function doSubmitTrade() {
   if (!canSubmit.value) return
@@ -305,39 +327,49 @@ async function refreshAnalysis() {
     <template v-if="modal">
       <div class="modal-head">
         <div><h2 id="modal-title">{{ title }}</h2><p>{{ description }}</p></div>
-        <button class="icon-button" aria-label="Close dialog" @click="closeModal"><Icon name="close" /></button>
+        <FormIconButton icon="close" label="Close dialog" @click="closeModal" />
       </div>
 
       <div class="modal-content">
         <!-- Connection -->
         <form v-if="type === 'settings'" novalidate @submit.prevent="doConnect">
           <div class="stack">
-            <div class="field">
-              <label for="api-base">FastAPI base URL</label>
-              <input id="api-base" v-model="connBase" type="url" placeholder="http://localhost:8000" autocomplete="url" aria-describedby="api-base-help" >
-              <small id="api-base-help">Origin only, without /api/v1. The API’s CORS must allow this site’s origin.</small>
+            <FormInput
+              id="api-base"
+              v-model="connBase"
+              label="FastAPI base URL"
+              help="Origin only, without /api/v1. The API’s CORS must allow this site’s origin."
+              type="url"
+              placeholder="http://localhost:8000"
+              autocomplete="url"
+            />
+            <FormField label="MT5 account type">
+              <FormSegmented v-model="connMode" :options="CONN_MODES" aria-label="MT5 account type" />
+            </FormField>
+            <div class="form-grid">
+              <FormInput id="mt5-login" v-model="connLogin" label="Account login" type="text" inputmode="numeric" placeholder="e.g. 12345678" autocomplete="username" spellcheck="false" />
+              <FormPassword
+                id="mt5-password"
+                v-model="connPassword"
+                label="Trading password"
+                help="Not the investor password. Sent once; never kept in this page."
+                autocomplete="current-password"
+              />
+              <FormInput
+                id="mt5-server"
+                v-model="connServer"
+                label="Server"
+                help="Exactly as shown in MT5’s login dialog."
+                type="text"
+                placeholder="e.g. Exness-MT5Trial7"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <FormInput id="mt5-broker" v-model="connBroker" label="Broker label" optional type="text" placeholder="e.g. Exness" maxlength="100" autocomplete="off" />
             </div>
-            <div class="field">
-              <label for="api-key">Owner API key</label>
-              <div class="field-inline">
-                <input id="api-key" v-model="connKey" :type="connShowKey ? 'text' : 'password'" placeholder="Your X-API-Key" autocomplete="off" spellcheck="false" aria-describedby="key-help" >
-                <button type="button" class="icon-button" :aria-label="connShowKey ? 'Hide API key' : 'Show API key'" @click="connShowKey = !connShowKey"><Icon name="eye" /></button>
-              </div>
-              <small id="key-help">Kept in memory. Never saved in browser storage.</small>
-            </div>
-            <div class="field">
-              <label>Expected MT5 account mode</label>
-              <div class="segmented" role="group" aria-label="Expected MT5 account mode">
-                <button type="button" :class="{ selected: connMode === 'demo' }" :aria-pressed="connMode === 'demo'" @click="connMode = 'demo'">Demo account</button>
-                <button type="button" :class="{ selected: connMode === 'real' }" :aria-pressed="connMode === 'real'" @click="connMode = 'real'">Real account</button>
-              </div>
-              <small>Must match the account the worker’s terminal is logged into.</small>
-            </div>
-            <div class="notice amber"><Icon name="shield" /> Connecting does not place a trade. If the worker is offline you can still browse history; trading stays paused.</div>
-            <label v-if="connMode === 'real'" class="check-line" style="margin-top: 12px">
-              <input v-model="connRealConfirm" type="checkbox" > I understand this connects to a real-money account.
-            </label>
-            <div v-if="modalError" class="field-error" role="alert">{{ modalError }}</div>
+            <div class="notice amber"><Icon name="shield" /> Connecting logs the worker’s terminal into this account but does not place a trade. If the worker is offline or still logging in you can browse history; trading stays paused until the account is active.</div>
+            <FormCheckbox v-if="connMode === 'real'" v-model="connRealConfirm" style="margin-top: 12px">I understand this connects to a real-money account.</FormCheckbox>
+            <FormError :message="modalError" />
           </div>
         </form>
 
@@ -359,42 +391,35 @@ async function refreshAnalysis() {
           </div>
           <div v-if="reviewBlocker" class="notice red" style="margin-bottom: 18px"><Icon name="lock" /> {{ reviewBlocker }}</div>
           <form novalidate @submit.prevent="doSubmitTrade">
-            <div class="field" style="margin-bottom: 15px">
-              <label>Position sizing</label>
-              <div class="segmented" role="group" aria-label="Position sizing">
-                <button v-for="[t, label] in [['FIXED_LOTS', 'Fixed lots'], ['RISK_PERCENT', '% of equity'], ['RISK_AMOUNT', 'Risk amount']] as [SizingType, string][]" :key="t" type="button" :class="{ selected: sizingType === t }" :aria-pressed="sizingType === t" @click="setSizing(t)">{{ label }}</button>
-              </div>
-            </div>
+            <FormField label="Position sizing" style="margin-bottom: 15px">
+              <FormSegmented :model-value="sizingType" :options="SIZING_TYPES" aria-label="Position sizing" @update:model-value="setSizing" />
+            </FormField>
             <div class="form-grid">
-              <div class="field">
-                <label for="trade-size">{{ sizingType === 'FIXED_LOTS' ? 'Lot size' : sizingType === 'RISK_PERCENT' ? 'Risk (% of equity)' : `Risk (${state.account.currency})` }}</label>
-                <input id="trade-size" v-model="sizingValue" type="number" min="0" :step="sizingType === 'FIXED_LOTS' ? state.spec?.volume_step || 0.01 : 0.1" inputmode="decimal" aria-describedby="trade-size-help" >
-                <small id="trade-size-help">{{ sizingHelp }}</small>
-              </div>
-              <div class="field">
-                <label for="trade-tp">Take-profit target</label>
-                <select id="trade-tp" v-model="tradeTp">
-                  <option v-for="(p, i) in a.take_profits" :key="i" :value="String(i)">
-                    TP {{ i + 1 }} · {{ money(p) }}{{ analysis.assessment?.reward_risk?.take_profits?.[i]?.gross_reward_risk ? ` · ${analysis.assessment.reward_risk.take_profits[i].gross_reward_risk.toFixed(2)}R` : '' }}
-                  </option>
-                </select>
-                <small>One TP is attached to the position.</small>
-              </div>
+              <FormInput
+                id="trade-size"
+                v-model="sizingValue"
+                :label="sizingType === 'FIXED_LOTS' ? 'Lot size' : sizingType === 'RISK_PERCENT' ? 'Risk (% of equity)' : `Risk (${state.account.currency})`"
+                :help="sizingHelp"
+                type="number"
+                min="0"
+                :step="sizingType === 'FIXED_LOTS' ? state.spec?.volume_step || 0.01 : 0.1"
+                inputmode="decimal"
+              />
+              <FormSelect id="trade-tp" v-model="tradeTp" label="Take-profit target" help="One TP is attached to the position.">
+                <option v-for="(p, i) in a.take_profits" :key="i" :value="String(i)">
+                  TP {{ Number(i) + 1 }} · {{ money(p) }}{{ analysis.assessment?.reward_risk?.take_profits?.[i]?.gross_reward_risk ? ` · ${analysis.assessment.reward_risk.take_profits[i].gross_reward_risk.toFixed(2)}R` : '' }}
+                </option>
+              </FormSelect>
               <template v-if="isOrder">
-                <div class="field">
-                  <label for="trade-type">Order type</label>
-                  <select id="trade-type" v-model="orderType">
-                    <option v-for="t in orderTypes" :key="t" :value="t">{{ t === 'MARKET' ? 'Market (now)' : humanize(t) }}{{ t === a.proposed_order_type ? ' · suggested' : '' }}</option>
-                  </select>
-                </div>
-                <div v-if="orderType !== 'MARKET'" class="field">
-                  <label for="trade-price">Order price</label>
-                  <input id="trade-price" v-model="orderPrice" type="number" :step="state.spec?.point || 0.01" inputmode="decimal" aria-describedby="trade-price-help" >
-                  <small id="trade-price-help">Inside {{ a.entry_zone?.map((v: number) => money(v)).join(' – ') }}. Expires with the analysis.</small>
-                </div>
+                <FormSelect id="trade-type" v-model="orderType" label="Order type">
+                  <option v-for="t in orderTypes" :key="t" :value="t">{{ t === 'MARKET' ? 'Market (now)' : humanize(t) }}{{ t === a.proposed_order_type ? ' · suggested' : '' }}</option>
+                </FormSelect>
+                <FormInput v-if="orderType !== 'MARKET'" id="trade-price" v-model="orderPrice" label="Order price" type="number" :step="state.spec?.point || 0.01" inputmode="decimal">
+                  <template #help>Inside {{ a.entry_zone?.map((v: number) => money(v)).join(' – ') }}. Expires with the analysis.</template>
+                </FormInput>
               </template>
-              <div class="field"><label for="trade-spread">Max spread (points)</label><input id="trade-spread" v-model="tradeSpread" type="number" min="1" inputmode="numeric" ></div>
-              <div class="field"><label for="trade-deviation">Max deviation (points)</label><input id="trade-deviation" v-model="tradeDeviation" type="number" min="0" max="1000" inputmode="numeric" ></div>
+              <FormInput id="trade-spread" v-model="tradeSpread" label="Max spread (points)" type="number" min="1" inputmode="numeric" />
+              <FormInput id="trade-deviation" v-model="tradeDeviation" label="Max deviation (points)" type="number" min="0" max="1000" inputmode="numeric" />
             </div>
 
             <!-- Server preview (orders only) -->
@@ -405,7 +430,7 @@ async function refreshAnalysis() {
                 <Badge v-else-if="preview" :value="preview.valid ? 'READY' : 'REJECTED'" />
               </div>
               <div class="panel-body">
-                <p v-if="previewError" class="field-error" style="margin: 0">{{ previewError }}</p>
+                <FormError v-if="previewError" :message="previewError" role="status" style="margin: 0" />
                 <template v-else-if="preview">
                   <div v-if="preview.order" class="modal-summary" style="margin-bottom: 10px">
                     <div><span>Volume</span><strong>{{ money(preview.order.volume) }} lots</strong></div>
@@ -428,7 +453,7 @@ async function refreshAnalysis() {
             </div>
 
             <div class="notice" style="margin-top: 18px"><Icon name="info" /> {{ isOrder ? 'A queued request is not a confirmed fill. Track the broker outcome in Activity.' : 'The plan watches closed candles. Size is resolved against live prices when it triggers. No position opens now.' }}</div>
-            <div v-if="modalError" class="field-error" role="alert" style="margin-top: 10px">{{ modalError }}</div>
+            <FormError :message="modalError" style="margin-top: 10px" />
           </form>
         </template>
 
@@ -466,21 +491,28 @@ async function refreshAnalysis() {
             <div><span>Account</span><strong>{{ state.account.login }} · {{ state.account.mode }}</strong></div>
           </div>
           <form novalidate>
-            <div class="field">
-              <label>Close volume</label>
-              <div class="segmented" role="group" aria-label="Close volume">
-                <button type="button" :class="{ selected: closeMode === 'full' }" :aria-pressed="closeMode === 'full'" @click="closeMode = 'full'">Full · {{ money(position.volume) }} lots</button>
-                <button type="button" :class="{ selected: closeMode === 'partial' }" :aria-pressed="closeMode === 'partial'" @click="closeMode = 'partial'">Partial</button>
-              </div>
-            </div>
-            <div class="field" :class="{ hidden: closeMode !== 'partial' }" style="margin-top: 15px">
-              <label for="partial-volume">Volume to close (lots)</label>
-              <input id="partial-volume" v-model="partialVolume" type="number" :min="state.spec?.volume_min || 0.01" :step="state.spec?.volume_step || 0.01" inputmode="decimal" >
-              <small>The remaining volume must also satisfy broker lot rules.</small>
-            </div>
+            <FormField label="Close volume">
+              <FormSegmented
+                v-model="closeMode"
+                :options="[{ value: 'full', label: `Full · ${money(position.volume)} lots` }, { value: 'partial', label: 'Partial' }]"
+                aria-label="Close volume"
+              />
+            </FormField>
+            <FormInput
+              id="partial-volume"
+              v-model="partialVolume"
+              :class="{ hidden: closeMode !== 'partial' }"
+              style="margin-top: 15px"
+              label="Volume to close (lots)"
+              help="The remaining volume must also satisfy broker lot rules."
+              type="number"
+              :min="state.spec?.volume_min || 0.01"
+              :step="state.spec?.volume_step || 0.01"
+              inputmode="decimal"
+            />
           </form>
           <div class="notice" style="margin-top: 18px"><Icon name="info" /> This queues a close request. The position stays open until the broker confirms the close. Closes work even while new entries are blocked.</div>
-          <div v-if="modalError" class="field-error" role="alert">{{ modalError }}</div>
+          <FormError :message="modalError" />
         </template>
 
         <!-- Protection -->
@@ -491,15 +523,13 @@ async function refreshAnalysis() {
           </div>
           <form novalidate>
             <div class="form-grid">
-              <div class="field"><label for="protect-sl">Stop loss</label><input id="protect-sl" v-model="protectSl" type="number" :step="state.spec?.point || 0.01" inputmode="decimal" ></div>
-              <div class="field"><label for="protect-tp">Take profit</label><input id="protect-tp" v-model="protectTp" type="number" :step="state.spec?.point || 0.01" inputmode="decimal" ></div>
+              <FormInput id="protect-sl" v-model="protectSl" label="Stop loss" type="number" :step="state.spec?.point || 0.01" inputmode="decimal" />
+              <FormInput id="protect-tp" v-model="protectTp" label="Take profit" type="number" :step="state.spec?.point || 0.01" inputmode="decimal" />
             </div>
-            <label class="check-line" style="margin-top: 12px">
-              <input v-model="allowWider" type="checkbox" > Allow a wider stop than the current one (increases risk)
-            </label>
+            <FormCheckbox v-model="allowWider" style="margin-top: 12px">Allow a wider stop than the current one (increases risk)</FormCheckbox>
           </form>
           <div class="notice" style="margin-top: 18px"><Icon name="shield" /> Both SL and TP are required. A wider stop is refused unless allowed, and total risk must stay within the server limit.</div>
-          <div v-if="modalError" class="field-error" role="alert">{{ modalError }}</div>
+          <FormError :message="modalError" />
         </template>
 
         <!-- Plan details -->
@@ -559,47 +589,41 @@ async function refreshAnalysis() {
         <template v-else-if="type === 'confirm'">
           <!-- eslint-disable-next-line vue/no-v-html -->
           <div v-html="modal.bodyHtml" />
-          <div v-if="modalError" class="field-error" role="alert">{{ modalError }}</div>
+          <FormError :message="modalError" />
         </template>
       </div>
 
       <div class="modal-footer">
-        <button class="button ghost" autofocus @click="closeModal">Cancel</button>
+        <FormButton variant="ghost" autofocus @click="closeModal">Cancel</FormButton>
 
-        <button v-if="type === 'settings'" class="button primary" :disabled="modalBusy" :aria-busy="modalBusy" @click="doConnect">
-          <template v-if="modalBusy"><span class="spinner" /> Connecting…</template>
-          <template v-else><Icon name="plug" />Connect backend</template>
-        </button>
+        <FormButton v-if="type === 'settings'" variant="primary" icon="plug" :loading="modalBusy" loading-text="Logging in…" @click="doConnect">Connect backend</FormButton>
 
-        <button v-else-if="type === 'scenarios'" class="button ghost" @click="resetDemo">Reset all demo data</button>
+        <FormButton v-else-if="type === 'scenarios'" variant="ghost" @click="resetDemo">Reset all demo data</FormButton>
 
-        <button v-else-if="type === 'review-trade'" class="button primary" :disabled="!canSubmit" :aria-busy="modalBusy" @click="doSubmitTrade">
-          <template v-if="modalBusy"><span class="spinner" /> Submitting…</template>
-          <template v-else><Icon :name="isOrder ? 'arrow' : 'plans'" />{{ !isOrder ? 'Start monitoring' : state.mode === 'demo' ? 'Place demo order' : `Submit ${side} ${orderType === 'MARKET' ? 'market' : humanize(orderType).toLowerCase()} order` }}</template>
-        </button>
+        <FormButton
+          v-else-if="type === 'review-trade'"
+          variant="primary"
+          :icon="isOrder ? 'arrow' : 'plans'"
+          :disabled="!canSubmit"
+          :loading="modalBusy"
+          loading-text="Submitting…"
+          @click="doSubmitTrade"
+        >
+          {{ !isOrder ? 'Start monitoring' : state.mode === 'demo' ? 'Place demo order' : `Submit ${side} ${orderType === 'MARKET' ? 'market' : humanize(orderType).toLowerCase()} order` }}
+        </FormButton>
 
         <template v-else-if="type === 'analysis-details'">
-          <button class="button ghost" @click="copyAnalysis"><Icon name="copy" />Copy JSON</button>
-          <button v-if="state.mode === 'api'" class="button" :disabled="modalBusy" :aria-busy="modalBusy" @click="refreshAnalysis">
-            <template v-if="modalBusy"><span class="spinner" /> Working…</template>
-            <template v-else><Icon name="refresh" />Recheck eligibility</template>
-          </button>
+          <FormButton variant="ghost" icon="copy" @click="copyAnalysis">Copy JSON</FormButton>
+          <FormButton v-if="state.mode === 'api'" icon="refresh" :loading="modalBusy" @click="refreshAnalysis">Recheck eligibility</FormButton>
         </template>
 
-        <button v-else-if="type === 'close-position'" class="button danger" :disabled="modalBusy" :aria-busy="modalBusy" @click="doClose">
-          <template v-if="modalBusy"><span class="spinner" /> Working…</template>
-          <template v-else>{{ state.mode === 'demo' ? 'Close demo position' : 'Submit close request' }}</template>
-        </button>
+        <FormButton v-else-if="type === 'close-position'" variant="danger" :loading="modalBusy" @click="doClose">
+          {{ state.mode === 'demo' ? 'Close demo position' : 'Submit close request' }}
+        </FormButton>
 
-        <button v-else-if="type === 'protection'" class="button primary" :disabled="modalBusy" :aria-busy="modalBusy" @click="doProtection">
-          <template v-if="modalBusy"><span class="spinner" /> Working…</template>
-          <template v-else>Submit SL / TP update</template>
-        </button>
+        <FormButton v-else-if="type === 'protection'" variant="primary" :loading="modalBusy" @click="doProtection">Submit SL / TP update</FormButton>
 
-        <button v-else-if="type === 'confirm'" class="button" :class="modal.danger ? 'danger' : 'primary'" :disabled="modalBusy" :aria-busy="modalBusy" @click="modal.onConfirm">
-          <template v-if="modalBusy"><span class="spinner" /> Working…</template>
-          <template v-else>{{ modal.label }}</template>
-        </button>
+        <FormButton v-else-if="type === 'confirm'" :variant="modal.danger ? 'danger' : 'primary'" :loading="modalBusy" @click="modal.onConfirm">{{ modal.label }}</FormButton>
       </div>
     </template>
   </dialog>

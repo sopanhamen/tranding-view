@@ -9,6 +9,7 @@ const { state, performanceBusy, loadPerformance, openModal } = useWorkspace()
 const perf = computed(() => state.performance)
 const sample = computed(() => perf.value?.sample)
 const OUTCOMES = ['WIN', 'LOSS', 'BREAKEVEN', 'OPEN', 'UNRESOLVED']
+const SOURCES = ['mock', 'demo', 'live'].map((s) => ({ value: s, label: humanize(s) }))
 
 onMounted(loadPerformance)
 watch(() => [state.perfSource, state.perfTimeframe, state.mode], loadPerformance)
@@ -17,10 +18,7 @@ watch(() => [state.perfSource, state.perfTimeframe, state.mode], loadPerformance
 <template>
   <div>
     <PageHeading title="Performance" desc="Recorded outcomes only. No predictions, no invented win rates.">
-      <button v-if="state.mode === 'api'" class="button ghost" :disabled="performanceBusy" @click="loadPerformance">
-        <template v-if="performanceBusy"><span class="spinner" /> Loading…</template>
-        <template v-else><Icon name="refresh" />Refresh</template>
-      </button>
+      <FormButton v-if="state.mode === 'api'" variant="ghost" icon="refresh" :loading="performanceBusy" loading-text="Loading…" @click="loadPerformance">Refresh</FormButton>
     </PageHeading>
 
     <EmptyState
@@ -28,21 +26,21 @@ watch(() => [state.perfSource, state.perfTimeframe, state.mode], loadPerformance
       title="Connect the API to see recorded outcomes"
       description="Statistics come from trades the server opened and reconciled. The demo workspace has none."
     >
-      <button class="button primary" @click="openModal({ type: 'settings' })"><Icon name="plug" />Connect your API</button>
+      <FormButton variant="primary" icon="plug" @click="openModal({ type: 'settings' })">Connect your API</FormButton>
     </EmptyState>
 
     <template v-else>
       <div class="toolbar" style="margin-bottom: 18px; gap: 12px; flex-wrap: wrap">
-        <div class="segmented" role="group" aria-label="Result source" style="min-width: 260px">
-          <button v-for="s in ['mock', 'demo', 'live']" :key="s" :class="{ selected: state.perfSource === s }" :aria-pressed="state.perfSource === s" @click="state.perfSource = s">{{ humanize(s) }}</button>
-        </div>
-        <div class="field" style="min-width: 160px">
-          <label for="perf-tf" class="hidden">Timeframe</label>
-          <select id="perf-tf" v-model="state.perfTimeframe" aria-label="Timeframe">
-            <option value="">All timeframes</option>
-            <option v-for="t in TIMEFRAMES" :key="t" :value="t">{{ t }}</option>
-          </select>
-        </div>
+        <FormSegmented v-model="state.perfSource" :options="SOURCES" aria-label="Result source" style="min-width: 260px" />
+        <FormSelect
+          id="perf-tf"
+          v-model="state.perfTimeframe"
+          :options="[{ value: '', label: 'All timeframes' }, ...TIMEFRAMES]"
+          label="Timeframe"
+          hide-label
+          aria-label="Timeframe"
+          style="min-width: 160px"
+        />
         <span class="hint">Sources are never mixed.</span>
       </div>
 
