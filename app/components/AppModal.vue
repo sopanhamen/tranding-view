@@ -27,6 +27,7 @@ const {
 const config = useRuntimeConfig()
 const dlg = ref<HTMLDialogElement | null>(null)
 const type = computed(() => modal.value?.type ?? '')
+const modalBodyHtml = computed(() => (modal.value as { bodyHtml?: string } | null)?.bodyHtml)
 
 // --- connection form state ---
 const connBase = ref('')
@@ -588,7 +589,7 @@ async function refreshAnalysis() {
         <!-- Generic confirm -->
         <template v-else-if="type === 'confirm'">
           <!-- eslint-disable-next-line vue/no-v-html -->
-          <div v-html="modal.bodyHtml" />
+          <div v-html="modalBodyHtml" />
           <FormError :message="modalError" />
         </template>
       </div>
@@ -623,7 +624,7 @@ async function refreshAnalysis() {
 
         <FormButton v-else-if="type === 'protection'" variant="primary" :loading="modalBusy" @click="doProtection">Submit SL / TP update</FormButton>
 
-        <FormButton v-else-if="type === 'confirm'" :variant="modal.danger ? 'danger' : 'primary'" :loading="modalBusy" @click="modal.onConfirm">{{ modal.label }}</FormButton>
+        <FormButton v-else-if="type === 'confirm'" :variant="modal?.danger ? 'danger' : 'primary'" :loading="modalBusy" @click="modal?.onConfirm">{{ modal?.label }}</FormButton>
       </div>
     </template>
   </dialog>
