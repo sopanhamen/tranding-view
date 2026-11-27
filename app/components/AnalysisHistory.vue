@@ -30,8 +30,8 @@ function status(a: any): string {
   const reasons = blockingReasons(a, state.now);
   if (!reasons.length) return "READY";
   if (
-    reasons[0].code === "ANALYSIS_EXPIRED" ||
-    reasons[0].code === "ANALYSIS_REASSESS_REQUIRED"
+    reasons[0]?.code === "ANALYSIS_EXPIRED" ||
+    reasons[0]?.code === "ANALYSIS_REASSESS_REQUIRED"
   )
     return "EXPIRED";
   return a.data.proposed_side ? "BLOCKED" : "NO_SETUP";
