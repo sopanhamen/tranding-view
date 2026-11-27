@@ -1,15 +1,17 @@
 <script setup lang="ts">
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { timefmt } from '~/utils/format'
+import { timefmt } from "~/utils/format";
 
-defineProps<{ events: any[] }>()
+defineProps<{ events: any[] }>();
 </script>
 
 <template>
   <div v-if="events.length" class="activity-list">
     <div v-for="(e, i) in events" :key="e.id ?? i" class="activity-item">
       <div class="activity-icon"><Icon :name="e.type" /></div>
-      <div class="grow"><h3>{{ e.title }}</h3><p>{{ e.description }}</p></div>
+      <div class="grow">
+        <h3>{{ e.title }}</h3>
+        <p>{{ e.description }}</p>
+      </div>
       <Badge v-if="e.state" :value="e.state" />
       <span class="time">{{ timefmt(e.at) }}</span>
     </div>

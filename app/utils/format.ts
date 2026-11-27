@@ -103,8 +103,14 @@ export function relative(v: string | number | Date, now = Date.now()): string {
   const ms = new Date(v).getTime() - now
   if (!Number.isFinite(ms)) return '—'
   const abs = Math.abs(ms)
-  const text =
-    abs < 60000 ? `${Math.round(abs / 1000)}s` : abs < 3600000 ? `${Math.round(abs / 60000)}m` : `${(abs / 3600000).toFixed(1)}h`
+  let text: string
+  if (abs < 60000) {
+    text = `${Math.round(abs / 1000)}s`
+  } else if (abs < 3600000) {
+    text = `${Math.round(abs / 60000)}m`
+  } else {
+    text = `${(abs / 3600000).toFixed(1)}h`
+  }
   return ms >= 0 ? `in ${text}` : `${text} ago`
 }
 
@@ -112,8 +118,24 @@ export const percent = (v: unknown, d = 1): string =>
   Number.isFinite(Number(v)) ? (Number(v) * 100).toFixed(d) + '%' : '—'
 
 export const humanize = (v: unknown): string => {
-  const s = String(v ?? '').replaceAll('_', ' ').toLowerCase()
-  return s ? s[0].toUpperCase() + s.slice(1) : ''
+  let raw = ''
+  if (v != null) {
+    if (typeof v === 'object') {
+      try {
+        raw = JSON.stringify(v) ?? ''
+      } catch {
+        raw = '[unserializable]'
+      }
+    } else {
+      try {
+        raw = JSON.stringify(v) ?? String(v)
+      } catch {
+        raw = String(v)
+      }
+    }
+  }
+  const s = raw.replaceAll('_', ' ').toLowerCase()
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''
 }
 
 export function download(name: string, content: string, type: string): void {

@@ -4,7 +4,6 @@
 export const TIMEFRAMES = ["M5", "M10", "M15", "M30", "H1", "H4"];
 
 // Command states that still change without operator action. Prefer the server's
-// `final` flag; this set is the fallback for rows that do not carry one.
 export const ACTIVE_STATES = new Set([
   "QUEUED",
   "PREPARING",
@@ -221,8 +220,7 @@ export function validateBaseUrl(value: string): string {
     throw new Error(
       "Use an API origin without credentials, query parameters or fragments.",
     );
-  const localHttp =
-    url.protocol === "http:" && LOCAL_HOSTS.has(url.hostname);
+  const localHttp = url.protocol === "http:" && LOCAL_HOSTS.has(url.hostname);
   if (url.protocol !== "https:" && !localHttp)
     throw new Error("Use HTTPS, or HTTP on localhost for development.");
   return url.toString().replace(/\/$/, "");
@@ -263,7 +261,10 @@ function timingReason(analysis: any, now: number): Reason | null {
   const expires = Date.parse(analysis.expires_at);
   const reassess = Date.parse(analysis.reassess_at);
   if (!Number.isFinite(expires) || !Number.isFinite(reassess))
-    return { code: "ANALYSIS_EXPIRED", message: "Analysis validity is missing" };
+    return {
+      code: "ANALYSIS_EXPIRED",
+      message: "Analysis validity is missing",
+    };
   if (now >= expires)
     return {
       code: "ANALYSIS_EXPIRED",

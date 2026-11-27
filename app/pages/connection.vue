@@ -7,9 +7,11 @@ import { accountMoney, timefmt, humanize } from '~/utils/format'
 const { state, openModal, refreshData, disconnect } = useWorkspace()
 
 const connected = computed(() => !!state.api)
-const statusBadge = computed(() =>
-  !connected.value ? 'DISCONNECTED' : state.historyOnly || !state.health?.fresh ? 'HISTORY_ONLY' : 'CONNECTED',
-)
+const statusBadge = computed(() => {
+  if (!connected.value) return 'DISCONNECTED'
+  if (state.historyOnly || !state.health?.fresh) return 'HISTORY_ONLY'
+  return 'CONNECTED'
+})
 const terminalState = computed(() => {
   const failed = loginError(state.connectionList, state.connection?.id)
   if (failed) return `Login failed: ${failed}`
