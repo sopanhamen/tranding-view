@@ -62,7 +62,7 @@ function askCancel(id: string) {
     <div class="page-grid">
       <div class="stack">
         <section v-if="state.commands.length" class="panel">
-          <div class="panel-head"><h2>Execution commands</h2><span class="tag">{{ state.mode === 'api' ? 'Server history' : 'Demo session' }}</span></div>
+          <div class="panel-head"><h2>Execution commands</h2><span class="tag">Server history</span></div>
           <div class="table-wrap">
             <table>
               <thead><tr><th>Created</th><th>Operation</th><th>Outcome</th><th>Detail</th><th /></tr></thead>
@@ -84,7 +84,7 @@ function askCancel(id: string) {
         </section>
 
         <section class="panel">
-          <div class="panel-head"><h2>{{ state.mode === 'api' ? 'Audit trail' : 'Workspace timeline' }}</h2><span class="small muted">UTC+7</span></div>
+          <div class="panel-head"><h2>Audit trail</h2><span class="small muted">UTC+7</span></div>
           <ActivityList :events="state.events" />
           <HistoryMore kind="events" />
         </section>
@@ -99,7 +99,7 @@ function askCancel(id: string) {
             <li><Icon name="check" /><div><strong>Filled / Closed / Updated</strong><small>The broker confirmed the operation.</small></div></li>
             <li><Icon name="info" cls="negative" /><div><strong>Unknown</strong><small>Outcome is uncertain. Inspect broker history; do not submit it again.</small></div></li>
           </ul>
-          <p class="hint" style="margin-top: 15px">{{ state.mode === 'api' ? 'Records are restored from the server on reconnect. Credentials stay in memory.' : 'Demo activity is simulated and resets on reload.' }}</p>
+          <p class="hint" style="margin-top: 15px">Records are restored from the server on reconnect. Credentials stay in memory.</p>
         </div>
       </aside>
     </div>

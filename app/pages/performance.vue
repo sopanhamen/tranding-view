@@ -24,7 +24,7 @@ watch(() => [state.perfSource, state.perfTimeframe, state.mode], loadPerformance
     <EmptyState
       v-if="state.mode !== 'api'"
       title="Connect the API to see recorded outcomes"
-      description="Statistics come from trades the server opened and reconciled. The demo workspace has none."
+      description="Statistics come from trades the server opened and reconciled."
     >
       <FormButton variant="primary" icon="plug" @click="openModal({ type: 'settings' })">Connect your API</FormButton>
     </EmptyState>

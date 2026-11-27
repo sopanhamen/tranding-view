@@ -42,7 +42,6 @@ function onCapture() {
     buildChartSvg(chartBars(), {
       symbol: state.symbol,
       tf: state.tf,
-      mode: state.mode,
       analysis: state.analysis,
       showLevels: state.showLevels,
     }),
@@ -139,7 +138,7 @@ function setCaptureTime(i: number, value: string) {
           <div class="form-section">
             <h3>Context included</h3>
             <div class="evidence-grid">
-              <div class="evidence-item row"><Icon name="check" cls="positive" /><div>Closed candle data<small>{{ state.mode === 'demo' ? 'Synthetic demo candles' : 'From the MT5 worker' }}</small></div></div>
+              <div class="evidence-item row"><Icon name="check" cls="positive" /><div>Closed candle data<small>From the MT5 worker</small></div></div>
               <div class="evidence-item row"><Icon name="check" cls="positive" /><div>Numerical indicators<small>RSI14, ATR14, EMA20/50/200, ROC and swing structure per timeframe</small></div></div>
               <div class="evidence-item row"><Icon name="check" cls="positive" /><div>Live quote and broker spec<small>Spread, lot rules and stop levels</small></div></div>
               <div class="evidence-item row"><Icon :name="state.uploads.length ? 'check' : 'image'" :cls="state.uploads.length ? 'positive' : 'muted'" /><div>Your screenshots<small>{{ state.uploads.length ? state.uploads.length + ' attached' : 'None attached' }}</small></div></div>
@@ -152,14 +151,14 @@ function setCaptureTime(i: number, value: string) {
               variant="primary"
               full
               icon="spark"
-              :disabled="state.mode === 'api' && (!state.connection || state.historyOnly)"
+              :disabled="!state.api || !state.connection || state.historyOnly"
               :loading="state.analysing"
               loading-text="Analysing market… this can take up to a minute"
               @click="runAnalysis()"
             >
               Run analysis
             </FormButton>
-            <p class="hint" style="text-align: center; margin-top: 10px">{{ state.mode === 'demo' ? 'Demo analysis uses an illustrative result. No AI request or trade is sent.' : !state.connection || state.historyOnly ? 'Analysis needs a live MT5 snapshot. Start the worker to continue.' : `Runs on the server with the ${state.aiBackend} AI backend. Nothing is traded.` }}</p>
+            <p class="hint" style="text-align: center; margin-top: 10px">{{ !state.api ? 'Connect your MT5 account to run an analysis.' : !state.connection || state.historyOnly ? 'Analysis needs a live MT5 snapshot. Start the worker to continue.' : `Runs on the server with the ${state.aiBackend} AI backend. Nothing is traded.` }}</p>
             <FormError :message="analysisError" role="status" />
           </div>
         </section>

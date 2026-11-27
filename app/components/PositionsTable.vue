@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useWorkspace } from '~/composables/useWorkspace'
-import { money, signed, accountMoney, timefmt } from '~/utils/format'
+import { money, accountMoney, timefmt } from '~/utils/format'
 
 const props = withDefaults(defineProps<{ rows: any[]; compact?: boolean }>(), { compact: false })
 const { state, pnl, openModal, go } = useWorkspace()
@@ -50,7 +50,7 @@ const pl = (p: any) => pnl(p)
               <td class="mono">{{ money(p.tp) }}</td>
             </template>
             <td class="mono" :class="Number.isFinite(pl(p)) ? (pl(p) >= 0 ? 'positive' : 'negative') : 'muted'">
-              {{ !Number.isFinite(pl(p)) ? 'Unavailable' : state.mode === 'demo' ? signed(pl(p)) : accountMoney(pl(p), state.account.currency) }}
+              {{ Number.isFinite(pl(p)) ? accountMoney(pl(p), state.account.currency) : 'Unavailable' }}
             </td>
             <td>
               <div class="table-actions" style="justify-content: flex-end">
@@ -76,8 +76,8 @@ const pl = (p: any) => pnl(p)
       </table>
     </div>
     <div class="table-footer">
-      <span>{{ props.rows.length }} position{{ props.rows.length === 1 ? '' : 's' }} · {{ state.mode === 'demo' ? 'Practice account' : 'Worker snapshot' }}</span>
-      <span class="row"><Icon name="refresh" />{{ state.mode === 'demo' ? 'Simulated values' : 'Updated ' + timefmt(state.updatedAt) }}</span>
+      <span>{{ props.rows.length }} position{{ props.rows.length === 1 ? '' : 's' }} · Worker snapshot</span>
+      <span class="row"><Icon name="refresh" />Updated {{ timefmt(state.updatedAt) }}</span>
     </div>
   </template>
 </template>

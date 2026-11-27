@@ -2,18 +2,17 @@
 import { onMounted } from 'vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { cn } from '~/utils/cn'
-import { useWorkspace } from '~/composables/useWorkspace'
+import { useWorkspace, defaultBase } from '~/composables/useWorkspace'
 
 const reducedMotion = useReducedMotion()
-const { ensureDemo } = useWorkspace()
-
-// Seed the practice workspace before the first paint (the controller did this at
-// module load). SSR is disabled, so setup already runs on the client.
-ensureDemo()
+const config = useRuntimeConfig()
+const { restoreSession } = useWorkspace()
 
 onMounted(() => {
   // ApiClient routes network calls through Nuxt $fetch.
   window.aurumFetch = $fetch
+  // Open on the server's current MT5 connection, if there is one.
+  restoreSession(defaultBase(String(config.public.apiBase || '')))
 })
 </script>
 

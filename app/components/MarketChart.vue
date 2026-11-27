@@ -11,14 +11,12 @@ const { state, chartBars, currentPrice, quote, openModal, captureChart, toggleLe
 
 const q = computed(() => quote())
 
-const live = computed(() => state.mode === 'api')
+const live = computed(() => !!state.api)
 const bars = computed(() => chartBars())
-const lastBar = computed(() => bars.value.at(-1))
 
 const chartOpts = computed(() => ({
   symbol: state.symbol,
   tf: state.tf,
-  mode: state.mode,
   analysis: state.analysis,
   showLevels: state.showLevels,
 }))
@@ -59,17 +57,17 @@ function onCrosshair() {
         <div class="row">
           <h2>{{ esc(state.symbol.replace('XAUUSD', 'XAU / USD')) }}</h2>
           <span class="badge" :class="live ? 'green' : 'amber'">{{
-            live ? (state.brokerBackend === 'mock' ? 'API MOCK' : 'SNAPSHOT') : 'DEMO DATA'
+            live ? (state.brokerBackend === 'mock' ? 'API MOCK' : 'SNAPSHOT') : 'NOT CONNECTED'
           }}</span>
         </div>
-        <p>Gold / US Dollar · {{ live ? (state.brokerBackend === 'mock' ? 'Server mock data' : 'MT5 broker') : 'Illustrative market' }}</p>
+        <p>Gold / US Dollar · {{ live ? (state.brokerBackend === 'mock' ? 'Server mock data' : 'MT5 broker') : 'No broker connection' }}</p>
       </div>
     </div>
     <div class="market-price">
       <strong>{{ money(currentPrice()) }}</strong>
-      <p :class="live ? (q && q.age_seconds <= 60 ? 'muted' : 'negative') : 'positive'">
-        {{ live ? (q ? `Bid · quote ${Math.round(q.age_seconds)}s old` : 'Last closed candle') : '+25.24 (+0.63%)' }}
-        <span class="subtle">{{ live ? (q && q.age_seconds > 60 ? 'market may be closed' : '') : 'today · demo' }}</span>
+      <p :class="q && q.age_seconds <= 60 ? 'muted' : 'negative'">
+        {{ q ? `Bid · quote ${Math.round(q.age_seconds)}s old` : live ? 'Last closed candle' : 'No quote' }}
+        <span class="subtle">{{ q && q.age_seconds > 60 ? 'market may be closed' : '' }}</span>
       </p>
     </div>
   </div>
@@ -77,7 +75,7 @@ function onCrosshair() {
   <div class="market-stats">
     <div><span>Bid / Ask</span><strong>{{ money(q?.bid) + ' / ' + money(q?.ask) }}</strong></div>
     <div><span>Spread</span><strong>{{ Number.isFinite(q?.spread_points) ? Math.round(q.spread_points) + ' pts' : '—' }}</strong></div>
-    <div><span>{{ live ? 'Closed candles' : 'Day range' }}</span><strong>{{ live ? (state.liveCandles[state.tf]?.length ?? 0) : '3,998.40 — 4,051.20' }}</strong></div>
+    <div><span>Closed candles</span><strong>{{ state.liveCandles[state.tf]?.length ?? 0 }}</strong></div>
     <div><span>Time zone</span><strong>UTC+7</strong></div>
   </div>
 
@@ -111,9 +109,7 @@ function onCrosshair() {
     <div class="chart-area" @pointermove="onPointerMove">
       <div class="chart-legend">
         <strong>{{ esc(state.symbol) }} · {{ state.tf }}</strong>
-        <span class="positive">{{
-          live ? 'Closed candles' : `O ${money(lastBar?.open)} H ${money(lastBar?.high)} L ${money(lastBar?.low)} C ${money(lastBar?.close)}`
-        }}</span>
+        <span class="positive">Closed candles</span>
       </div>
       <div class="chart-watermark">XAUUSD</div>
       <!-- eslint-disable-next-line vue/no-v-html -->
@@ -124,14 +120,14 @@ function onCrosshair() {
   </div>
 
   <div class="chart-caption">
-    <span><Icon name="clock" />Closed candles · {{ live ? 'Broker snapshot' : 'Illustrative chart' }}</span>
-    <span>{{ live ? 'Refresh for latest data' : 'Gold spot · Prices in USD' }}</span>
+    <span><Icon name="clock" />Closed candles · Broker snapshot</span>
+    <span>Refresh for latest data</span>
   </div>
 
   <div class="chart-bottom">
     <div>
-      <span class="row"><span class="dot positive" />{{ live ? (state.brokerBackend === 'mock' ? 'Server mock snapshot' : 'MT5 snapshot') : 'Simulation running' }}</span>
-      <span>{{ live ? 'Updated ' + timefmt(state.updatedAt) : 'Not a live price feed' }}</span>
+      <span class="row"><span class="dot" :class="live ? 'positive' : 'negative'" />{{ live ? (state.brokerBackend === 'mock' ? 'Server mock snapshot' : 'MT5 snapshot') : 'Not connected' }}</span>
+      <span>{{ live ? 'Updated ' + timefmt(state.updatedAt) : 'Connect an MT5 account' }}</span>
     </div>
     <span class="mono">{{ state.tf }} / UTC+7</span>
   </div>

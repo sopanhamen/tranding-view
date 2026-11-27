@@ -128,11 +128,27 @@ describe('connection flow', () => {
     expect(() => connectionBody({ ...creds, server: '  ' })).toThrow(/server/)
   })
 
-  it('reads the worker login error only while inactive', () => {
-    expect(loginError({ active: false, terminal: { error: 'Invalid account' } })).toBe('Invalid account')
-    expect(loginError({ active: true, terminal: { error: 'old' } })).toBeNull()
-    expect(loginError({ active: false, terminal: { error: { message: 'Bad server' } } })).toBe('Bad server')
-    expect(loginError(undefined)).toBeNull()
+  it('reads the worker login error only for the requested, inactive connection', () => {
+    const list = (active: boolean, error: unknown, requested = 'c1') => ({
+      connections: [{ id: 'c1', active }, { id: 'c2', active: false }],
+      terminal: { requested_connection_id: requested, switching: true, error },
+    })
+    expect(loginError(list(false, 'Invalid account'), 'c1')).toBe('Invalid account')
+    expect(loginError(list(true, 'old'), 'c1')).toBeNull()
+    expect(loginError(list(false, { message: 'Bad server' }), 'c1')).toBe('Bad server')
+    expect(loginError(list(false, 'Invalid account'), 'c2')).toBeNull()
+    expect(loginError(list(false, 'Invalid account', 'c2'), 'c1')).toBeNull()
+    expect(loginError(null, 'c1')).toBeNull()
+  })
+
+  it('keeps the shared terminal from GET /mt5/connections', async () => {
+    const terminal = { requested_connection_id: 'c1', error: null }
+    vi.stubGlobal('window', { aurumFetch: vi.fn().mockResolvedValue({ connections: [{ id: 'c1' }], terminal }) })
+    await expect(new ApiClient('http://localhost:8000').connections()).resolves.toEqual({
+      connections: [{ id: 'c1' }],
+      terminal,
+    })
+    vi.unstubAllGlobals()
   })
 })
 

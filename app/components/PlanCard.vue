@@ -5,7 +5,7 @@ import { useWorkspace, sizingLabel } from '~/composables/useWorkspace'
 import { money, short, esc, humanize, datefmt } from '~/utils/format'
 
 const props = defineProps<{ plan: any }>()
-const { state, openModal, cancelPlan, simulateTrigger } = useWorkspace()
+const { state, openModal, cancelPlan } = useWorkspace()
 
 const p = computed(() => props.plan)
 const a = computed(() => p.value.analysis?.data)
@@ -72,7 +72,6 @@ function askCancel() {
     <div class="card-footer">
       <span class="mono">{{ short(p.id) }}</span>
       <div class="row">
-        <FormButton v-if="state.mode === 'demo' && p.state === 'MONITORING'" variant="ghost" icon="play" @click="simulateTrigger(p.id)">Simulate trigger</FormButton>
         <FormButton v-if="p.command_id && state.commands.some((c) => c.id === p.command_id)" variant="ghost" @click="openModal({ type: 'command-details', id: p.command_id })">Command</FormButton>
         <FormButton variant="ghost" @click="openModal({ type: 'plan-details', id: p.id })">Details</FormButton>
         <FormButton v-if="cancellable" variant="danger" @click="askCancel">Cancel plan</FormButton>

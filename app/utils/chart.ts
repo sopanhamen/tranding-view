@@ -7,7 +7,6 @@ import { money, timefmt, esc } from '~/utils/format'
 export interface ChartOptions {
   symbol: string
   tf: string
-  mode: 'demo' | 'api'
   analysis: any
   showLevels: boolean
   large?: boolean
@@ -18,7 +17,7 @@ function isPhone(large: boolean | undefined): boolean {
 }
 
 export function buildChartSvg(bars: any[], opts: ChartOptions): string {
-  const { symbol, tf, mode, analysis, showLevels, large } = opts
+  const { symbol, tf, analysis, showLevels, large } = opts
   if (!bars.length)
     return `<svg class="chart-svg" viewBox="0 0 900 385" role="img" aria-label="No broker candle data available"><text x="450" y="190" text-anchor="middle" style="fill:var(--muted);font-size:14px">No broker candles available. Refresh the terminal connection.</text></svg>`
   const phone = isPhone(large)
@@ -31,19 +30,12 @@ export function buildChartSvg(bars: any[], opts: ChartOptions): string {
   const bottom = 72
   const usable = w - left - right
   const plot = h - top - bottom
-  let min = Math.min(...sliced.map((b) => b.low))
-  let max = Math.max(...sliced.map((b) => b.high))
+  const min = Math.min(...sliced.map((b) => b.low)) - 2
+  const max = Math.max(...sliced.map((b) => b.high)) + 2
   const a = analysis?.data
-  if (showLevels && mode === 'demo') {
-    min = Math.min(min, a?.stop_loss ?? min) - 3
-    max = Math.max(max, a?.take_profits?.[0] ?? max) + 4
-  } else {
-    min -= 2
-    max += 2
-  }
   const y = (v: number) => top + ((max - v) / (max - min)) * plot
   const step = usable / sliced.length
-  let out = `<svg class="chart-svg" id="candle-chart" viewBox="0 0 ${w} ${h}" role="img" aria-labelledby="chart-title chart-desc"><title id="chart-title">${esc(symbol)} ${tf} candlestick chart</title><desc id="chart-desc">${mode === 'demo' ? 'Illustrative synthetic' : 'Broker-reported closed'} candles. Use Candle data for numerical values. Green candles close above their open; red candles close below it.</desc>`
+  let out = `<svg class="chart-svg" id="candle-chart" viewBox="0 0 ${w} ${h}" role="img" aria-labelledby="chart-title chart-desc"><title id="chart-title">${esc(symbol)} ${tf} candlestick chart</title><desc id="chart-desc">Broker-reported closed candles. Use Candle data for numerical values. Green candles close above their open; red candles close below it.</desc>`
   for (let i = 0; i < 6; i++) {
     const v = max - (i * (max - min)) / 5
     const yy = y(v)
@@ -75,7 +67,7 @@ export function buildChartSvg(bars: any[], opts: ChartOptions): string {
       if (value && y(value) >= top - 5 && y(value) < h - bottom + 15)
         out += `<line x1="${left}" y1="${y(value)}" x2="${w - right}" y2="${y(value)}" stroke="${color}" stroke-opacity=".55" stroke-dasharray="4 5"/><rect x="${w - right - 86}" y="${y(value) - 10}" width="84" height="18" rx="3" fill="#14181e"/><text x="${w - right - 80}" y="${y(value) + 2}" style="fill:${color};font-size:8px">${label} ${money(value)}</text>`
   }
-  const last = sliced.at(-1)?.close ?? 4032.18
+  const last = sliced[sliced.length - 1].close
   const yy = y(last)
   out += `<line x1="${left}" y1="${yy}" x2="${w - right}" y2="${yy}" stroke="#6dd5ad" stroke-opacity=".5" stroke-dasharray="2 4"/><rect x="${w - right + 1}" y="${yy - 10}" width="73" height="21" rx="3" fill="#6dd5ad"/><text x="${w - right + 8}" y="${yy + 4}" style="fill:#10281f;font-size:10px;font-weight:600">${money(last)}</text></svg>`
   return out

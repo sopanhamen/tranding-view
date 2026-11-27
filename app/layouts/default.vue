@@ -51,7 +51,7 @@ const links = computed(() => [
 
 // Worker freshness for the sidebar terminal card.
 const terminal = computed(() => {
-  if (state.mode === 'demo') return { ok: true, title: 'Practice terminal', detail: 'Simulation ready' }
+  if (!state.api) return { ok: false, title: 'Not connected', detail: 'Connect an MT5 account' }
   const h = state.health
   if (!h?.fresh) return { ok: false, title: 'MT5 worker offline', detail: 'History only · trading paused' }
   const age = Math.round(h.snapshot_age_seconds ?? 0)
@@ -67,7 +67,7 @@ const now = ref(Date.now())
 let clock: ReturnType<typeof setInterval> | undefined
 
 function onModeChip() {
-  if (state.mode === 'demo') openModal({ type: 'scenarios' })
+  if (!state.api) openModal({ type: 'settings' })
   else go('connection')
 }
 
@@ -119,10 +119,10 @@ onUnmounted(() => {
         <div class="terminal-mini">
           <div class="row between">
             <span class="row"><span class="dot" :class="terminal.ok ? 'positive' : 'negative'" />{{ terminal.title }}</span>
-            <span class="badge" :class="state.account.mode === 'real' ? 'red' : 'amber'">{{ state.account.mode.toUpperCase() }}</span>
+            <span v-if="state.account.mode" class="badge" :class="state.account.mode === 'real' ? 'red' : 'amber'">{{ state.account.mode.toUpperCase() }}</span>
           </div>
           <div class="row between muted small">
-            <span class="mono">{{ esc(state.account.login) }}</span>
+            <span class="mono">{{ esc(state.account.login ?? '—') }}</span>
             <span>{{ terminal.detail }}</span>
           </div>
         </div>
@@ -144,8 +144,8 @@ onUnmounted(() => {
           <time class="mono muted">{{ timefmt(now) }} <span class="subtle">UTC+7</span></time>
           <button class="mode-chip" @click="onModeChip">
             <span class="dot" />{{
-              state.mode === 'demo'
-                ? 'Demo workspace'
+              !state.api
+                ? 'Not connected'
                 : state.account.mode === 'real'
                   ? 'Real account'
                   : state.brokerBackend === 'mock'
@@ -164,7 +164,12 @@ onUnmounted(() => {
           <div><strong>Connection needs attention</strong><p>{{ state.networkError }} Trading actions are paused.</p></div>
           <FormButton variant="ghost" @click="refreshData()">Retry</FormButton>
         </div>
-        <div v-else-if="state.mode === 'api' && exposureBlocked()" class="status-banner red">
+        <div v-else-if="!state.api" class="status-banner">
+          <Icon name="plug" />
+          <div><strong>Not connected</strong><p>Connect your MT5 account to load market data, positions and history from the API.</p></div>
+          <FormButton variant="ghost" @click="openModal({ type: 'settings' })">Connect</FormButton>
+        </div>
+        <div v-else-if="exposureBlocked()" class="status-banner red">
           <Icon name="lock" />
           <div><strong>New entries are blocked</strong><p>{{ state.health?.uncertain_commands || 1 }} command(s) have an uncertain broker outcome. Reconcile before opening another trade. Closes and cancellations still work.</p></div>
           <NuxtLink class="button ghost" to="/activity">Inspect activity</NuxtLink>

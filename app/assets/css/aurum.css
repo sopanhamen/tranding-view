@@ -1724,37 +1724,6 @@ dialog::backdrop {
   font: 12px var(--font-mono);
   margin-top: 5px;
 }
-.scenario-options {
-  display: grid;
-  gap: 12px;
-}
-.scenario-option {
-  padding: 16px;
-  text-align: left;
-  background: #10141a;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  display: flex;
-  gap: 14px;
-  align-items: center;
-}
-.scenario-option:hover {
-  border-color: var(--primary);
-  background: var(--raised);
-}
-.scenario-option svg {
-  color: var(--primary);
-}
-.scenario-option strong {
-  font-size: 12px;
-  display: block;
-}
-.scenario-option small {
-  font-size: 10px;
-  color: var(--muted);
-  display: block;
-  margin-top: 4px;
-}
 #toast {
   position: fixed;
   bottom: 24px;
@@ -1853,17 +1822,6 @@ dialog::backdrop {
   display: flex;
   gap: 6px;
   align-items: center;
-}
-.scenario-pill {
-  background: #e8c47d0b;
-  border: 1px solid #e8c47d21;
-  border-radius: 5px;
-  color: var(--primary);
-  padding: 4px 7px;
-  font-size: 9px;
-}
-.scenario-pill:hover {
-  background: #e8c47d20;
 }
 .mini-note {
   padding: 10px 18px;

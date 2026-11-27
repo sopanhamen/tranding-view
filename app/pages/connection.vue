@@ -6,12 +6,12 @@ import { accountMoney, timefmt, humanize } from '~/utils/format'
 
 const { state, openModal, refreshData, disconnect } = useWorkspace()
 
-const connected = computed(() => state.mode === 'api')
+const connected = computed(() => !!state.api)
 const statusBadge = computed(() =>
-  !connected.value ? 'DEMO' : state.historyOnly || !state.health?.fresh ? 'HISTORY_ONLY' : 'CONNECTED',
+  !connected.value ? 'DISCONNECTED' : state.historyOnly || !state.health?.fresh ? 'HISTORY_ONLY' : 'CONNECTED',
 )
 const terminalState = computed(() => {
-  const failed = loginError(state.connection)
+  const failed = loginError(state.connectionList, state.connection?.id)
   if (failed) return `Login failed: ${failed}`
   return state.connection?.active ? 'Logged into this account' : 'Worker is logging in…'
 })
@@ -46,20 +46,20 @@ function askDisconnect() {
             <div class="instrument">
               <div class="gold-symbol">Au</div>
               <div>
-                <h2>{{ connected ? 'MetaTrader 5' : 'Aurum practice terminal' }}</h2>
-                <p>{{ connected ? 'Account linked through your FastAPI server' : 'Explore the entire workflow without a broker connection' }}</p>
+                <h2>MetaTrader 5</h2>
+                <p>{{ connected ? 'Account linked through your FastAPI server' : 'No account connected yet' }}</p>
               </div>
             </div>
             <dl class="connection-details">
-              <div><dt>Account login</dt><dd>{{ state.account.login }}</dd></div>
-              <div><dt>Account mode</dt><dd>{{ state.account.mode.toUpperCase() }}</dd></div>
-              <div><dt>Broker server</dt><dd>{{ state.account.server }}</dd></div>
+              <div><dt>Account login</dt><dd>{{ state.account.login ?? '—' }}</dd></div>
+              <div><dt>Account mode</dt><dd>{{ state.account.mode.toUpperCase() || '—' }}</dd></div>
+              <div><dt>Broker server</dt><dd>{{ state.account.server || '—' }}</dd></div>
               <div><dt>Trading symbol</dt><dd>{{ state.symbol }}</dd></div>
               <div><dt>Equity / balance</dt><dd>{{ accountMoney(state.account.equity, state.account.currency) }} / {{ Number.isFinite(state.account.balance) ? accountMoney(state.account.balance, state.account.currency) : '—' }}</dd></div>
               <div><dt>Terminal permission</dt><dd :class="state.account.trade_allowed ? '' : 'negative'">{{ state.account.trade_allowed ? 'Trading allowed' : 'Trading disabled' }}</dd></div>
               <template v-if="connected">
                 <div><dt>Leverage · margin</dt><dd>{{ state.account.leverage ? '1:' + state.account.leverage : '—' }} · {{ humanize(state.account.margin_mode) || '—' }}</dd></div>
-                <div><dt>Terminal login</dt><dd :class="loginError(state.connection) ? 'negative' : ''">{{ terminalState }}</dd></div>
+                <div><dt>Terminal login</dt><dd :class="loginError(state.connectionList, state.connection?.id) ? 'negative' : ''">{{ terminalState }}</dd></div>
                 <div><dt>Connection id</dt><dd class="mono small">{{ state.connection?.id || '—' }}</dd></div>
                 <div><dt>Worker snapshot</dt><dd :class="state.health?.fresh ? '' : 'negative'">{{ state.health?.fresh ? `${Math.round(state.health.snapshot_age_seconds)}s old · ${timefmt(state.health.snapshot_updated_at)}` : 'Stale — worker offline' }}</dd></div>
                 <div><dt>Broker · AI backend</dt><dd>{{ state.brokerBackend }} · {{ state.aiBackend }}</dd></div>
@@ -68,12 +68,11 @@ function askDisconnect() {
             </dl>
             <div class="notice" :class="{ amber: !connected }">
               <Icon name="info" />
-              {{ connected ? 'Your API logs its Windows worker into this account. Reconnect with other credentials to switch accounts.' : 'This is a simulated environment. Account balances, market data and executions are examples.' }}
+              {{ connected ? 'Your API logs its Windows worker into this account. Reconnect with other credentials to switch accounts.' : 'Connect an MT5 account to load account details, market data and history from your API.' }}
             </div>
             <div class="row" style="margin-top: 18px">
               <FormButton icon="refresh" @click="refreshData()">Check connection</FormButton>
               <FormButton v-if="connected" variant="ghost" @click="askDisconnect">Disconnect session</FormButton>
-              <FormButton v-else variant="ghost" @click="openModal({ type: 'scenarios' })">Explore demo scenarios</FormButton>
             </div>
           </div>
         </section>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useWorkspace } from '~/composables/useWorkspace'
-import { money, signed, timefmt, datefmt, humanize, accountMoney, esc } from '~/utils/format'
+import { money, timefmt, datefmt, humanize, accountMoney, esc } from '~/utils/format'
 
 const { state, pnl, refreshData, openModal, cancelPendingOrder } = useWorkspace()
 
@@ -48,12 +48,12 @@ function setQuery(query: string) {
     </PageHeading>
 
     <div class="summary-grid">
-      <div class="summary-card"><span class="muted">Open positions</span><strong>{{ state.positions.length }}</strong><small>Account {{ state.account.login }}</small></div>
+      <div class="summary-card"><span class="muted">Open positions</span><strong>{{ state.positions.length }}</strong><small>Account {{ state.account.login ?? '—' }}</small></div>
       <div class="summary-card"><span class="muted">Total volume</span><strong>{{ money(totalVolume) }}<span class="small muted"> lots</span></strong><small>Across all displayed positions</small></div>
       <div class="summary-card">
         <span class="muted">Floating P/L</span>
-        <strong :class="pnlSum >= 0 ? 'positive' : 'negative'">{{ state.mode === 'demo' ? signed(pnlSum) : accountMoney(pnlSum, state.account.currency) }}</strong>
-        <small>{{ state.mode === 'demo' ? 'Illustrative mark-to-market' : 'Broker profit · snapshot ' + timefmt(state.updatedAt) + ' UTC+7' }}</small>
+        <strong :class="pnlSum >= 0 ? 'positive' : 'negative'">{{ accountMoney(pnlSum, state.account.currency) }}</strong>
+        <small>{{ 'Broker profit · snapshot ' + timefmt(state.updatedAt) + ' UTC+7' }}</small>
       </div>
     </div>
 
@@ -73,7 +73,7 @@ function setQuery(query: string) {
           placeholder="Search symbol or ticket…"
           @update:model-value="setQuery"
         />
-        <span class="badge" :class="state.account.mode === 'real' ? 'red' : 'amber'">{{ state.account.mode.toUpperCase() }} ACCOUNT</span>
+        <span v-if="state.account.mode" class="badge" :class="state.account.mode === 'real' ? 'red' : 'amber'">{{ state.account.mode.toUpperCase() }} ACCOUNT</span>
       </div>
 
       <div id="position-results">

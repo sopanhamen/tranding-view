@@ -23,6 +23,7 @@ export const signed = (v: number): string =>
   (v >= 0 ? '+' : '−') + '$' + money(Math.abs(v))
 
 export function accountMoney(v: number, currency = 'USD'): string {
+  if (!Number.isFinite(v)) return '—'
   try {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',

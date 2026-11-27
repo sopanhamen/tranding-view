@@ -76,7 +76,7 @@ function onReview() {
         <FormIconButton icon="more" label="View analysis details" @click="openModal({ type: 'analysis-details' })" />
       </div>
       <p>
-        {{ state.mode === 'demo' ? 'Illustrative setup' : esc(analysis.provenance?.model || 'AI model') }}
+        {{ esc(analysis.provenance?.model || 'AI model') }}
         <span class="subtle">·</span> {{ a.timeframe }}
         <span class="subtle">·</span> {{ timefmt(analysis.created_at) }}
       </p>
@@ -162,7 +162,7 @@ function onReview() {
 
     <div class="mini-note">
       <Icon name="info" />
-      {{ state.mode === 'demo' ? 'Simulated setup. No real order will be placed.' : '* AI confidence is uncalibrated. No win probability is implied.' }}
+      * AI confidence is uncalibrated. No win probability is implied.
     </div>
   </section>
 </template>
